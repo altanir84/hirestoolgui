@@ -18,8 +18,9 @@ class NodeType(Enum):
     ROOT = auto()
     DIRECTORY = auto()
     FILE = auto()
+    ISO = auto()
 
-
+    
 class CheckState(Enum):
     """Tri-state checkbox values used in the tree view."""
     UNCHECKED = 0
@@ -74,6 +75,8 @@ class FileNode:
         "children",
         "check_state",
         "checked_file_count",
+        "total_dff_count",
+        "total_iso_count",
         "total_file_count",
     )
 
@@ -91,6 +94,8 @@ class FileNode:
         self.children: List[FileNode] = []
         self.check_state = CheckState.UNCHECKED
         self.checked_file_count = 0
+        self.total_dff_count = 0
+        self.total_iso_count = 0
         self.total_file_count = 0
 
     # ------------------------------------------------------------------
@@ -160,6 +165,14 @@ class FileNode:
                     1 if state == CheckState.CHECKED else 0
                 )
                 file_count += 1
+
+            elif child.node_type == NodeType.ISO:
+                child.check_state = state
+                child.checked_file_count = (
+                    1 if state == CheckState.CHECKED else 0
+                )
+                file_count += 1
+
             else:
                 child._cascade_to_descendants(state)
                 file_count += child.total_file_count
@@ -179,10 +192,31 @@ class FileNode:
                     total += 1
                     if child.check_state == CheckState.CHECKED:
                         checked += 1
+
+                elif child.node_type == NodeType.ISO:
+                    total += 1
+                    if child.check_state == CheckState.CHECKED:
+                        checked += 1
+
                 else:
                     total += child.total_file_count
                     checked += child.checked_file_count
 
+            dff = 0
+            iso = 0
+            for child in node.children:
+                if child.node_type == NodeType.FILE:
+                    dff += 1
+
+                elif child.node_type == NodeType.ISO:
+                    iso += 1
+
+                else:
+                    dff += child.total_dff_count
+                    iso += child.total_iso_count
+
+            node.total_dff_count = dff
+            node.total_iso_count = iso
             node.total_file_count = total
             node.checked_file_count = checked
 
@@ -206,5 +240,9 @@ class FileNode:
     def is_directory(self) -> bool:
         """``True`` if this node represents a folder."""
         return self.node_type == NodeType.DIRECTORY
+
+    def is_iso(self) -> bool:
+        """``True`` if this node represents an ``.iso`` file."""
+        return self.node_type == NodeType.ISO
 
 
