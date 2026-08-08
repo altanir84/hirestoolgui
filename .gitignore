@@ -221,3 +221,5 @@ __marimo__/
 
 # pycache 
 __pycache__/
+
+test.py

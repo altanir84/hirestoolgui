@@ -60,7 +60,6 @@ class ProgressPanel(QWidget):
     def reset(self) -> None:
         """Reset progress bars and enable the Cancel button."""
         self._bar_overall.setValue(0)
-        # self._bar_file.setValue(0)
         self._lbl_overall.setText("Ready")
         self._btn_cancel.setEnabled(True)
         self._log_view.clear()
@@ -72,10 +71,11 @@ class ProgressPanel(QWidget):
         self._bar_overall.setValue(current)
         self._lbl_overall.setText(f"{current}/{total}")
 
-    # def set_file_progress(self, current: int, total: int) -> None:
-    #     """Update the per-file progress bar."""
-    #     self._bar_file.setMaximum(total)
-    #     self._bar_file.setValue(current)
+    def set_file_progress(self, current: int, total: int) -> None:
+        """Update the per-track progress bar (SACD extraction only)."""
+        self._bar_file.setEnabled(True)
+        self._bar_file.setMaximum(total)
+        self._bar_file.setValue(current)
 
     def append_log(self, entry: LogEntry) -> None:
         """Append a *LogEntry* to the on-screen log view."""
@@ -97,7 +97,10 @@ class ProgressPanel(QWidget):
     def conversion_finished(self) -> None:
         """Disable the Cancel button and mark progress as complete."""
         self._btn_cancel.setEnabled(False)
-        # self._bar_file.setValue(self._bar_file.maximum())
+        self._bar_overall.setValue(self._bar_overall.maximum())
+        # self._bar_file.setEnabled(False)
+        # self._bar_file.setValue(0)
+        # self._bar_file.setMaximum(1)
         self._lbl_overall.setText("Done")
 
     # ------------------------------------------------------------------
@@ -115,15 +118,19 @@ class ProgressPanel(QWidget):
         self._bar_overall.setFormat("Overall: %v/%m")
         self._lbl_overall = QLabel("Ready")
 
-        # self._bar_file = QProgressBar()
-        # self._bar_file.setFormat("File: %v/%m")
+        self._bar_file = QProgressBar()
+        self._bar_file.setFormat("Track: %v/%m")
+        self._bar_file.setEnabled(False)
+        self._bar_file.setValue(0)
+        self._bar_file.setMaximum(1)
+
 
         self._btn_cancel = QPushButton("Cancel")
         self._btn_cancel.setFixedWidth(80)
         self._btn_cancel.clicked.connect(self.cancel_requested.emit)
 
         progress_layout.addWidget(self._bar_overall, 2)
-        # progress_layout.addWidget(self._bar_file, 2)
+        progress_layout.addWidget(self._bar_file, 2)
         progress_layout.addWidget(self._lbl_overall)
         progress_layout.addWidget(self._btn_cancel)
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Entry point for the DFF2DSF GUI application.
+Entry point for the HiResToolsGUI.
 
 Usage:
-    python main.py
+    python3 main.py
 """
 
 import sys
@@ -24,8 +24,8 @@ from app.main_window import MainWindow
 def main() -> None:
     """Bootstrap the Qt application and show the main window."""
     app = QApplication(sys.argv)
-    app.setApplicationName("DFF2DSF Converter")
-    app.setOrganizationName("Petrobras")
+    app.setApplicationName("HiResToolsGUI")
+    app.setOrganizationName("HiResToolsGUI")
     app.setApplicationVersion("1.0.0")
 
     # Detect system dark-mode preference (Qt 6.5+).
@@ -43,6 +43,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+
     main()
 
 

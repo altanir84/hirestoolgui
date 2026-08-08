@@ -2,8 +2,8 @@
 File-tree panel with checkboxes, add/remove folder controls, and
 drag-and-drop support.
 
-Displays the hierarchical view of scanned DFF files and allows the user
-to select which files will be converted.
+Displays the hierarchical view of scanned DFF and ISO files and allows
+the user to select which files will be converted.
 """
 
 from __future__ import annotations
@@ -37,10 +37,10 @@ class FilePanel(QWidget):
     -------
     scan_completed(total_files):
         Emitted after a successful scan with the total number of DFF
-        files discovered.
+        and ISO files discovered.
     selection_changed(checked_count):
         Emitted whenever the user toggles a checkbox.  *checked_count*
-        is the number of FILE nodes currently CHECKED.
+        is the number of FILE and ISO nodes currently CHECKED.
     """
 
     scan_completed = Signal(int)
@@ -71,15 +71,13 @@ class FilePanel(QWidget):
         """
         folder = folder.resolve()
 
-        # Ignore if already covered by an existing root.
         for existing in self._root_folders:
             try:
                 folder.relative_to(existing)
-                return  # folder is inside an existing root
+                return
             except ValueError:
                 pass
 
-        # Remove any existing roots that are inside the new folder.
         self._root_folders = [
             r for r in self._root_folders
             if not self._is_inside(r, folder)
@@ -89,11 +87,11 @@ class FilePanel(QWidget):
         self._rescan()
 
     def checked_files(self) -> List[Path]:
-        """Return absolute paths of all CHECKED FILE nodes."""
+        """Return absolute paths of all CHECKED FILE and ISO nodes."""
         return self._model.checked_files()
 
     def has_files(self) -> bool:
-        """``True`` if the model contains at least one FILE node."""
+        """``True`` if the model contains at least one FILE or ISO node."""
         root = self._model.root_node()
         return root is not None and root.total_file_count > 0
 
@@ -109,7 +107,7 @@ class FilePanel(QWidget):
         toolbar = QHBoxLayout()
 
         self._btn_add = QPushButton("Add Folder...")
-        self._btn_add.setToolTip("Add a root folder to scan for .dff files")
+        self._btn_add.setToolTip("Add a root folder to scan for .dff and .iso files")
 
         self._btn_remove = QPushButton("Remove Selected")
         self._btn_remove.setToolTip(
@@ -142,13 +140,22 @@ class FilePanel(QWidget):
         self._tree.dragEnterEvent = self._on_drag_enter
         self._tree.dropEvent = self._on_drop
 
-        # -- Status label --
+        # -- Status bar (totals left, selected right) --
+        status_row = QHBoxLayout()
+
         self._lbl_status = QLabel("No folders added yet.")
         self._lbl_status.setStyleSheet("color: #888; padding: 4px;")
 
+        self._lbl_selected = QLabel("")
+        self._lbl_selected.setStyleSheet("color: #888; padding: 4px;")
+        self._lbl_selected.setAlignment(Qt.AlignRight)
+
+        status_row.addWidget(self._lbl_status, 1)
+        status_row.addWidget(self._lbl_selected)
+
         layout.addLayout(toolbar)
         layout.addWidget(self._tree)
-        layout.addWidget(self._lbl_status)
+        layout.addLayout(status_row)
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -189,7 +196,6 @@ class FilePanel(QWidget):
         if not indexes:
             return
 
-        # Collect rows to remove (sorted descending to preserve indices).
         rows = sorted({idx.row() for idx in indexes}, reverse=True)
         for row in rows:
             if row < len(self._root_folders):
@@ -210,7 +216,18 @@ class FilePanel(QWidget):
 
     @Slot()
     def _on_checked_changed(self) -> None:
-        count = len(self._model.checked_files())
+        checked = self._model.checked_files()
+        count = len(checked)
+        dff_count = sum(1 for f in checked if f.suffix.lower() == ".dff")
+        iso_count = sum(1 for f in checked if f.suffix.lower() == ".iso")
+        parts = []
+        if dff_count:
+            parts.append(f"{dff_count} DFF")
+        if iso_count:
+            parts.append(f"{iso_count} ISO")
+        self._lbl_selected.setText(
+            " + ".join(parts) + " selected" if parts else ""
+        )
         self.selection_changed.emit(count)
 
     # ------------------------------------------------------------------
@@ -239,14 +256,32 @@ class FilePanel(QWidget):
         self._model.set_root_node(new_root)
         self._tree.expandAll()
 
-        total = new_root.total_file_count
+        total_dff = new_root.total_dff_count
+        iso_count = new_root.total_iso_count
+        total = total_dff + iso_count
 
-        self._lbl_status.setText(
-            f"{total} DFF file(s) across "
-            f"{len(self._root_folders)} folder(s)"
-        )
+        if total == 0 and len(self._root_folders) > 0:
+            self._lbl_status.setText(
+                "No DFF or ISO files found in the selected folder(s)."
+            )
+            self._lbl_status.setStyleSheet("color: #e74c3c; padding: 4px;")
+        else:
+            if iso_count > 0:
+                status = (
+                    f"{total_dff} DFF + {iso_count} ISO file(s) across "
+                    f"{len(self._root_folders)} folder(s)"
+                )
+            else:
+                status = (
+                    f"{total_dff} DFF file(s) across "
+                    f"{len(self._root_folders)} folder(s)"
+                )
+            self._lbl_status.setText(status)
+            self._lbl_status.setStyleSheet("color: #888; padding: 4px;")
+
         self._btn_remove.setEnabled(len(self._root_folders) > 0)
         self.scan_completed.emit(total)
+
 
     def _set_tree_state(self, checked: bool) -> None:
         """
@@ -263,7 +298,6 @@ class FilePanel(QWidget):
             root_node.set_check_state(file_state)
 
         qt_state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        
         root = self._model.invisibleRootItem()
 
         self._model._updating = True
@@ -287,5 +321,6 @@ class FilePanel(QWidget):
             return True
         except ValueError:
             return False
+
 
 

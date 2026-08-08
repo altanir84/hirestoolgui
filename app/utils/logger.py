@@ -1,8 +1,8 @@
 """
-Centralised logging for the DFF2DSF GUI application.
+Centralised logging for the HiResToolsGUI application.
 
 Writes both to the in-memory ring buffer (displayed in the GUI) and to
-timestamped files under ``~/.dff2dsf_gui/logs/``.
+timestamped files under ``~/.hirestoolsgui/logs/``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class LogManager:
         Directory where log files are written.  Created automatically.
     """
 
-    _DEFAULT_LOG_DIR = Path.home() / ".dff2dsf_gui" / "logs"
+    _DEFAULT_LOG_DIR = Path.home() / ".hirestoolsgui" / "logs"
 
     def __init__(
         self,

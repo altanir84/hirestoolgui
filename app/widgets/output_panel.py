@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Signal, Slot, QSettings
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+_OUTPUT_DEFAULT = str(Path.home() / "Music" / "export")
 
 class OutputPanel(QGroupBox):
     """
@@ -49,6 +50,25 @@ class OutputPanel(QGroupBox):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Output Mode", parent)
         self._build_ui()
+        self._restore_settings()
+
+    def _restore_settings(self) -> None:
+        """Load previously saved output preferences"""
+        settings = QSettings()
+        mode = settings.value("output_mode", self.MODE_SINGLE)
+        if mode == self.MODE_PER:
+            self._radio_per.setChecked(True)
+        else:
+            self._radio_single.setChecked(True)
+
+        root = settings.value("output_root", "")
+        if root:
+            self._edit_root.setText(root)
+        else:
+            self._edit_root.setText(_OUTPUT_DEFAULT)
+
+        self._edit_root.setEnabled(self._radio_single.isChecked())
+        self._btn_browse_root.setEnabled(self._radio_single.isChecked())
 
     # ------------------------------------------------------------------
     # Public queries
@@ -96,9 +116,7 @@ class OutputPanel(QGroupBox):
         # --- Single-root path row ---
         root_layout = QHBoxLayout()
         self._edit_root = QLineEdit()
-        self._edit_root.setPlaceholderText(
-            "/home/user/music_export"
-        )
+        self._edit_root.setPlaceholderText(_OUTPUT_DEFAULT)
         self._edit_root.textChanged.connect(self._emit_mode_changed)
 
         self._btn_browse_root = QPushButton("Browse...")
@@ -136,6 +154,10 @@ class OutputPanel(QGroupBox):
 
     @Slot(str)
     def _emit_mode_changed(self, _text: str = "") -> None:
+        settings = QSettings()
+        settings.setValue("output_mode", self.output_mode())
+        if self.output_root() is not None:
+            settings.setValue('output_root', str(self.output_root()))
         self.mode_changed.emit(self.output_mode(), self.output_root())
 
 

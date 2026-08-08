@@ -101,6 +101,17 @@ class FileTreeModel(QStandardItemModel):
                 Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
             )
             item.setEditable(False)
+        elif node.is_iso():
+            item.setCheckable(True)
+            item.setCheckState(
+                Qt.Checked if node.check_state == CheckState.CHECKED
+                else Qt.Unchecked
+            )
+            item.setFlags(
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+            )
+            item.setEditable(False)
+            item.setForeground(Qt.GlobalColor.cyan)
         else:
             # Directory: checkable, tri-state auto-handled by Qt.
             item.setCheckable(True)
@@ -181,7 +192,7 @@ class FileTreeModel(QStandardItemModel):
         for row in range(parent.rowCount()):
             item = parent.child(row)
             node = item.data(_FILE_NODE_ROLE)
-            if node is not None and node.is_file():
+            if node is not None and (node.is_file() or node.is_iso()):
                 if item.checkState() == Qt.Checked:
                     result.append(node.path)
             if item.hasChildren():

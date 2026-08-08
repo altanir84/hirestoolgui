@@ -1,39 +1,27 @@
 """
-Configuration panel for the DFF2DSF GUI.
+Configuration panel for HiResToolsGUI.
 
 Provides widgets to:
-* Locate the ``dff2dsf`` binary (file dialog or manual entry).
-* Set the number of parallel worker threads.
-* Display validation status of the binary path.
+* Locate the ``dff2dsf`` and ``sacd_extract`` binaries.
+* Display validation status for each binary path.
+* Persist all settings via :class:`QSettings`.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
 import shutil
+from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import QSettings, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QFileDialog,
-    QFormLayout,
-    QGroupBox,# --- Workers spin box ---
-        # workers_layout = QHBoxLayout()
-        # workers_layout.addWidget(QLabel("Parallel workers:"))
-        # self._spin_workers = QSpinBox()
-        # self._spin_workers.setRange(1, 8)
-        # self._spin_workers.setValue(2)
-        # self._spin_workers.setToolTip(
-        #     "Number of simultaneous conversions.\n"
-        #     "Higher values increase disk I/O load."
-        # )
-        # workers_layout.addWidget(self._spin_workers)
-        # workers_layout.addStretch()
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -41,58 +29,46 @@ from PySide6.QtWidgets import (
 
 class ConfigPanel(QGroupBox):
     """
-    Group-box containing binary-path selection and worker-count controls.
+    Group-box containing binary-path selection for both converters.
 
     Signals
     -------
-    binary_changed(path):
-        Emitted when the user selects or types a new binary path.
-        *path* is the absolute, resolved :class:`Path` (may not yet
-        be validated).
+    dff2dsf_changed(path):
+        Emitted when the dff2dsf binary path changes.
+    sacd_extract_changed(path):
+        Emitted when the sacd_extract binary path changes.
     """
 
-    binary_changed = Signal(Path)
+    dff2dsf_changed = Signal(Path)
+    sacd_extract_changed = Signal(Path)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Converter Configuration", parent)
-        self._binary_path: Optional[Path] = None
+        self._settings = QSettings()
+        self._dff2dsf_path: Optional[Path] = None
+        self._sacd_extract_path: Optional[Path] = None
         self._build_ui()
-        self._auto_detect_binary()
+        self._restore_settings()
 
     # ------------------------------------------------------------------
     # Public queries
     # ------------------------------------------------------------------
 
-    def binary_path(self) -> Optional[Path]:
-        """Return the currently configured binary path, or ``None``."""
-        return self._binary_path
+    def dff2dsf_path(self) -> Optional[Path]:
+        """Return the configured dff2dsf binary path, or ``None``."""
+        return self._dff2dsf_path
 
-    def worker_count(self) -> int:
-        """Return the number of parallel workers selected by the user."""
-        return 1
+    def sacd_extract_path(self) -> Optional[Path]:
+        """Return the configured sacd_extract binary path, or ``None``."""
+        return self._sacd_extract_path
 
-    def set_binary_status(self, valid: bool, message: str) -> None:
-        """
-        Update the validation indicator next to the binary path field.
+    def set_dff2dsf_status(self, valid: bool, message: str) -> None:
+        """Update the validation indicator for dff2dsf."""
+        self._set_status(self._lbl_dff2dsf_status, valid, message)
 
-        Parameters
-        ----------
-        valid:
-            ``True`` when the binary is found and executable.
-        message:
-            Human-readable status shown as a tooltip and coloured label.
-        """
-        if valid:
-            self._lbl_status.setText("OK")
-            self._lbl_status.setStyleSheet(
-                "color: #2ecc71; font-weight: bold;"
-            )
-        else:
-            self._lbl_status.setText("NOT FOUND")
-            self._lbl_status.setStyleSheet(
-                "color: #e74c3c; font-weight: bold;"
-            )
-        self._lbl_status.setToolTip(message)
+    def set_sacd_extract_status(self, valid: bool, message: str) -> None:
+        """Update the validation indicator for sacd_extract."""
+        self._set_status(self._lbl_sacd_status, valid, message)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -101,71 +77,124 @@ class ConfigPanel(QGroupBox):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # --- Binary path row ---
-        binary_layout = QHBoxLayout()
-        self._edit_binary = QLineEdit()
-        self._edit_binary.setPlaceholderText(
-            "/usr/local/bin/dff2dsf  or use Browse..."
-        )
-        self._edit_binary.textChanged.connect(self._on_binary_text_changed)
+        # -- dff2dsf row --
+        layout.addWidget(QLabel("dff2dsf binary:"))
+        dff2dsf_row = QHBoxLayout()
+        self._edit_dff2dsf = QLineEdit()
+        self._edit_dff2dsf.setPlaceholderText("/usr/local/bin/dff2dsf")
+        self._edit_dff2dsf.textChanged.connect(self._on_dff2dsf_text_changed)
 
-        self._btn_browse = QPushButton("Browse...")
-        self._btn_browse.clicked.connect(self._on_browse)
+        self._btn_dff2dsf_browse = QPushButton("Browse...")
+        self._btn_dff2dsf_browse.clicked.connect(self._on_dff2dsf_browse)
 
-        self._lbl_status = QLabel("")
-        self._lbl_status.setFixedWidth(90)
-        self._lbl_status.setAlignment(Qt.AlignCenter)
+        self._lbl_dff2dsf_status = QLabel("")
+        self._lbl_dff2dsf_status.setFixedWidth(90)
+        self._lbl_dff2dsf_status.setAlignment(Qt.AlignCenter)
 
-        binary_layout.addWidget(self._edit_binary, 1)
-        binary_layout.addWidget(self._btn_browse)
-        binary_layout.addWidget(self._lbl_status)
+        dff2dsf_row.addWidget(self._edit_dff2dsf, 1)
+        dff2dsf_row.addWidget(self._btn_dff2dsf_browse)
+        dff2dsf_row.addWidget(self._lbl_dff2dsf_status)
+        layout.addLayout(dff2dsf_row)
 
-        # # --- Workers spin box ---
-        # workers_layout = QHBoxLayout()
-        # workers_layout.addWidget(QLabel("Parallel workers:"))
-        # self._spin_workers = QSpinBox()
-        # self._spin_workers.setRange(1, 8)
-        # self._spin_workers.setValue(2)
-        # self._spin_workers.setToolTip(
-        #     "Number of simultaneous conversions.\n"
-        #     "Higher values increase disk I/O load."
-        # )
-        # workers_layout.addWidget(self._spin_workers)
-        # workers_layout.addStretch()
+        # -- sacd_extract row --
+        layout.addWidget(QLabel("sacd_extract binary:"))
+        sacd_row = QHBoxLayout()
+        self._edit_sacd = QLineEdit()
+        self._edit_sacd.setPlaceholderText("/usr/local/bin/sacd_extract")
+        self._edit_sacd.textChanged.connect(self._on_sacd_text_changed)
 
-        layout.addLayout(binary_layout)
-        # layout.addLayout(workers_layout)
+        self._btn_sacd_browse = QPushButton("Browse...")
+        self._btn_sacd_browse.clicked.connect(self._on_sacd_browse)
+
+        self._lbl_sacd_status = QLabel("")
+        self._lbl_sacd_status.setFixedWidth(90)
+        self._lbl_sacd_status.setAlignment(Qt.AlignCenter)
+
+        sacd_row.addWidget(self._edit_sacd, 1)
+        sacd_row.addWidget(self._btn_sacd_browse)
+        sacd_row.addWidget(self._lbl_sacd_status)
+        layout.addLayout(sacd_row)
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _restore_settings(self) -> None:
+        """Load previously saved paths from QSettings."""
+        dff2dsf = self._settings.value("dff2dsf_binary", "")
+        if dff2dsf:
+            self._edit_dff2dsf.setText(dff2dsf)
+        else:
+            self._auto_detect("dff2dsf", self._edit_dff2dsf)
+
+        sacd = self._settings.value("sacd_extract_binary", "")
+        if sacd:
+            self._edit_sacd.setText(sacd)
+        else:
+            self._auto_detect("sacd_extract", self._edit_sacd)
+
+    @staticmethod
+    def _auto_detect(name: str, edit: QLineEdit) -> None:
+        """Search for *name* on ``$PATH`` and pre-fill the text field."""
+        located = shutil.which(name)
+        if located:
+            edit.setText(located)
 
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
 
     @Slot()
-    def _on_browse(self) -> None:
-        """Open a file dialog to locate the dff2dsf binary."""
+    def _on_dff2dsf_browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Locate dff2dsf binary",
-            str(Path.home()),
-            "All Files (*)",
+            self, "Locate dff2dsf binary", str(Path.home()), "All Files (*)",
         )
         if path:
-            self._edit_binary.setText(path)
+            self._edit_dff2dsf.setText(path)
 
     @Slot(str)
-    def _on_binary_text_changed(self, text: str) -> None:
-        """Store the resolved path and emit binary_changed."""
+    def _on_dff2dsf_text_changed(self, text: str) -> None:
         text = text.strip()
         if not text:
-            self._binary_path = None
+            self._dff2dsf_path = None
+            self._settings.remove("dff2dsf_binary")
             return
-        self._binary_path = Path(text).expanduser().resolve()
-        self.binary_changed.emit(self._binary_path)
+        self._dff2dsf_path = Path(text).expanduser().resolve()
+        self._settings.setValue("dff2dsf_binary", str(self._dff2dsf_path))
+        self.dff2dsf_changed.emit(self._dff2dsf_path)
 
     @Slot()
-    def _auto_detect_binary(self) -> None:
-        """Search for ``dff2dsf`` on the system $PATH and pre-fill the text field when found."""
-        located = shutil.which('dff2dsf')
-        if located:
-            self._edit_binary.setText(located)
+    def _on_sacd_browse(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Locate sacd_extract binary", str(Path.home()), "All Files (*)",
+        )
+        if path:
+            self._edit_sacd.setText(path)
+
+    @Slot(str)
+    def _on_sacd_text_changed(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            self._sacd_extract_path = None
+            self._settings.remove("sacd_extract_binary")
+            return
+        self._sacd_extract_path = Path(text).expanduser().resolve()
+        self._settings.setValue("sacd_extract_binary", str(self._sacd_extract_path))
+        self.sacd_extract_changed.emit(self._sacd_extract_path)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _set_status(label: QLabel, valid: bool, message: str) -> None:
+        if valid:
+            label.setText("OK")
+            label.setStyleSheet("color: #2ecc71; font-weight: bold;")
+        else:
+            label.setText("NOT FOUND")
+            label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        label.setToolTip(message)
+
+
 

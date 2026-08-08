@@ -1,8 +1,8 @@
 """
 Recursive filesystem scanner that builds a :class:`FileNode` tree.
 
-Only ``.dff`` and ``.DFF`` files are collected.  The resulting tree is
-ready to be consumed by :class:`FileTreeModel`.
+Only ``.dff``, ``.DFF``, ``.iso`` and ``.ISO`` files are collected.
+The resulting tree is ready to be consumed by :class:`FileTreeModel`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from app.models.file_node import FileNode, NodeType, CheckState
 class FileScanner:
     """
     Walk one or more root directories and construct a :class:`FileNode`
-    hierarchy containing every ``.dff`` / ``.DFF`` file found.
+    hierarchy containing every ``.dff`` / ``.DFF`` and ``.iso`` / ``.ISO``
+    file found.
 
     Parameters
     ----------
@@ -29,9 +30,6 @@ class FileScanner:
         non-fatal issue encountered (e.g. permission errors, broken
         symlinks).
     """
-
-    #: File extensions considered convertible (case-insensitive match).
-    DFF_EXTENSIONS = frozenset({".dff"})
 
     def __init__(
         self,
@@ -62,9 +60,14 @@ class FileScanner:
             if dir_node is not None:
                 root_node.append_child(dir_node)
 
-        # Initialise total_file_count on ROOT.
         root_node.total_file_count = sum(
-            child.total_file_count for child in root_node.children
+            c.total_file_count for c in root_node.children
+        )
+        root_node.total_dff_count = sum(
+            c.total_dff_count for c in root_node.children
+        )
+        root_node.total_iso_count = sum(
+            c.total_iso_count for c in root_node.children
         )
         return root_node
 
@@ -77,7 +80,7 @@ class FileScanner:
         Recursively scan *directory*, returning a :class:`FileNode`.
 
         Returns ``None`` if the directory is inaccessible or contains no
-        DFF files (empty subtrees are pruned).
+        DFF or ISO files (empty subtrees are pruned).
         """
         try:
             entries = sorted(
@@ -93,7 +96,6 @@ class FileScanner:
 
         for entry in entries:
             if entry.is_symlink():
-                # Resolve symlinks once; skip broken ones.
                 try:
                     target = entry.resolve(strict=True)
                 except OSError:
@@ -102,13 +104,20 @@ class FileScanner:
                 if target.is_dir():
                     child = self._walk(target)
                     if child is not None:
-                        child.name = entry.name  # preserve original name
+                        child.name = entry.name
                         child.path = entry
                         dir_node.append_child(child)
                         file_count += child.total_file_count
                 elif self._is_dff(target):
                     file_node = FileNode(entry.name, entry, NodeType.FILE)
                     file_node.total_file_count = 1
+                    file_node.total_dff_count = 1
+                    dir_node.append_child(file_node)
+                    file_count += 1
+                elif self._is_iso(target):
+                    file_node = FileNode(entry.name, entry, NodeType.ISO)
+                    file_node.total_file_count = 1
+                    file_node.total_iso_count = 1
                     dir_node.append_child(file_node)
                     file_count += 1
                 continue
@@ -121,18 +130,41 @@ class FileScanner:
             elif self._is_dff(entry):
                 file_node = FileNode(entry.name, entry, NodeType.FILE)
                 file_node.total_file_count = 1
+                file_node.total_dff_count = 1
+                dir_node.append_child(file_node)
+                file_count += 1
+            elif self._is_iso(entry):
+                file_node = FileNode(entry.name, entry, NodeType.ISO)
+                file_node.total_file_count = 1
+                file_node.total_iso_count = 1
                 dir_node.append_child(file_node)
                 file_count += 1
 
         if file_count == 0:
-            return None  # prune empty branches
+            return None
 
         dir_node.total_file_count = file_count
+
+        dir_node.total_dff_count = sum(
+            c.total_dff_count for c in dir_node.children
+        )
+        dir_node.total_iso_count = sum(
+            c.total_iso_count for c in dir_node.children
+        )
+
+        dir_node.total_file_count = file_count
+
         return dir_node
 
     @staticmethod
     def _is_dff(path: Path) -> bool:
         """Return ``True`` if *path* has a ``.dff`` / ``.DFF`` suffix."""
         return path.suffix.lower() == ".dff"
+
+    @staticmethod
+    def _is_iso(path: Path) -> bool:
+        """Return ``True`` if *path* has a ``.iso`` / ``.ISO`` suffix."""
+        return path.suffix.lower() == ".iso"
+
 
 
