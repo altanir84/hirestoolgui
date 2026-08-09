@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import os
 import re
-import threading
 import shutil
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QThread, Qt, Signal, Slot, QTimer
+from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -26,12 +26,12 @@ from PySide6.QtWidgets import (
     QSplitter,
     QVBoxLayout,
     QWidget,
-    )
+)
 
 from app.core.converter_worker import ConversionTask, ConverterWorker
 from app.core.path_validator import PathValidator
 from app.core.tag_preserver import TagPreserver
-from app.utils.logger import LogManager
+from app.utils.logger import ErrorLogManager, LogManager
 from app.widgets.config_panel import ConfigPanel
 from app.widgets.file_panel import FilePanel
 from app.widgets.output_panel import OutputPanel
@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 700)
 
         self._log_manager = LogManager()
+        self._error_log = ErrorLogManager()
         self._cancel_event = threading.Event()
         self._tag_preserver = TagPreserver()
         self._threads: List[QThread] = []
@@ -91,15 +92,12 @@ class MainWindow(QMainWindow):
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(4, 4, 4, 4)
 
-        # -- Config panel --
         self._config_panel = ConfigPanel()
         root_layout.addWidget(self._config_panel)
 
-        # -- Vertical splitter --
         self._splitter = QSplitter(Qt.Vertical)
         self._splitter.setChildrenCollapsible(False)
 
-        # Upper widget -------------------------------------------------
         upper = QWidget()
         upper_layout = QHBoxLayout(upper)
         upper_layout.setContentsMargins(0, 0, 0, 0)
@@ -122,7 +120,6 @@ class MainWindow(QMainWindow):
         upper_layout.addWidget(self._file_panel, 3)
         upper_layout.addWidget(right_widget, 1)
 
-        # Lower widget -------------------------------------------------
         lower = QWidget()
         lower_layout = QVBoxLayout(lower)
         lower_layout.setContentsMargins(0, 0, 0, 0)
@@ -138,7 +135,6 @@ class MainWindow(QMainWindow):
         lower_layout.addWidget(self._btn_start)
         lower_layout.addWidget(self._progress_panel, 1)
 
-        # Populate splitter --------------------------------------------
         self._splitter.addWidget(upper)
         self._splitter.addWidget(lower)
         self._splitter.setStretchFactor(0, 3)
@@ -304,6 +300,8 @@ class MainWindow(QMainWindow):
                 self._log_manager.warning(
                     f"Path rejected: {rp.name} — {reason}"
                 )
+                file_type = "ISO" if rp.suffix.lower() == ".iso" else "DFF"
+                self._error_log.add_skipped(str(rp), file_type, reason)
 
         if not self._warn_rejected_files(rejected, len(valid)):
             return
@@ -333,12 +331,10 @@ class MainWindow(QMainWindow):
         if not self._confirm_conversion(tasks):
             return
 
-        # Cache ID3 tags for DFF files before conversion.
         for task in tasks:
             if task.converter == "dff2dsf":
                 self._tag_preserver.cache_tags(task.source)
 
-        # Map sources to converter types for tag restoration.
         self._task_map = {str(t.source): t.converter for t in tasks}
 
         self._running = True
@@ -350,6 +346,7 @@ class MainWindow(QMainWindow):
         self._total_tasks = len(tasks)
         self._progress_panel.reset()
         self._progress_panel.set_overall_progress(0, self._total_tasks)
+        self._error_log.reset()
 
         self._file_panel.setEnabled(False)
         self._output_panel.setEnabled(False)
@@ -376,7 +373,6 @@ class MainWindow(QMainWindow):
 
         thread.started.connect(worker.run)
         worker.task_started.connect(self._on_task_started)
-        worker.task_progress.connect(self._on_task_progress)
         worker.task_finished.connect(self._on_task_finished)
         worker.task_skipped.connect(self._on_task_skipped)
         worker.all_done.connect(self._on_worker_done)
@@ -385,8 +381,8 @@ class MainWindow(QMainWindow):
         self._threads.append(thread)
         self._workers.append(worker)
 
-        thread.start()
         self._progress_timer.start(200)
+        thread.start()
 
     @Slot()
     def _on_cancel(self) -> None:
@@ -401,35 +397,6 @@ class MainWindow(QMainWindow):
     def _on_task_started(self, source: str, dest: str) -> None:
         self._log_manager.info(f"Converting: {Path(source).name}")
         self._progress_panel.append_log(self._log_manager.entries()[-1])
-
-    @Slot(int, int, str)
-    def _on_task_progress(self, current: int, total: int, _message: str) -> None:
-        self._progress_panel.set_file_progress(current, total)
-        self._log_manager.info(_message)
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
-
-    @Slot()
-    def _poll_progress(self) -> None:
-        """Poll the worker's progress queue and update the UI."""
-        for worker in self._workers:
-            while True:
-                item = worker.get_progress()
-                if item is None:
-                    break
-                current, total, message = item
-                self._progress_panel.set_file_progress(current, total)
-                # Extract track filename from the progress message.
-                
-                match = re.search(r"Processing\s+\[(.+)\]", message)
-
-                if match:
-                    track_name = Path(match.group(1)).name
-                    self._log_manager.info(
-                        f"  Track {current}/{total}: {track_name}"
-                    )
-                    self._progress_panel.append_log(
-                        self._log_manager.entries()[-1]
-                    )
 
     @Slot(str, str, int, str)
     def _on_task_finished(
@@ -446,7 +413,6 @@ class MainWindow(QMainWindow):
             self._success_count += 1
             self._log_manager.success(f"OK: {Path(source).name}")
 
-            # Restore ID3 tags for DFF conversions.
             if converter_type == "dff2dsf":
                 applied = self._tag_preserver.apply_tags(
                     Path(source), Path(dest)
@@ -456,8 +422,6 @@ class MainWindow(QMainWindow):
                         f"Could not preserve tags for: {Path(source).name}"
                     )
 
-            # Move SACD tracks up one level (sacd_extract creates an
-            # extra subfolder named after the ISO).
             if converter_type == "sacd_extract":
                 dest_path = Path(dest)
                 dest_dir = dest_path.parent
@@ -475,11 +439,10 @@ class MainWindow(QMainWindow):
             if stderr and exit_code != 0:
                 self._log_manager.error(f"  stderr: {stderr}")
 
+            file_type = "ISO" if converter_type == "sacd_extract" else "DFF"
+            self._error_log.add_failure(source, file_type, exit_code, stderr)
+
         self._progress_panel.append_log(self._log_manager.entries()[-1])
-
-
-
-
 
     @Slot(str, str)
     def _on_task_skipped(self, source: str, reason: str) -> None:
@@ -487,22 +450,18 @@ class MainWindow(QMainWindow):
             f"SKIPPED: {Path(source).name} — {reason}"
         )
         self._progress_panel.append_log(self._log_manager.entries()[-1])
+        file_type = "ISO" if source.lower().endswith(".iso") else "DFF"
+        self._error_log.add_skipped(source, file_type, reason)
 
     @Slot()
     def _on_worker_done(self) -> None:
         """Finalise the UI when the worker signals completion."""
+        self._progress_timer.stop()
         self._running = False
-        for t in self._threads:
-            if t.isRunning():
-                t.quit()
-                t.wait(3000)
         self._workers.clear()
         self._tag_preserver.clear()
 
         self._progress_panel.conversion_finished()
-        self._progress_timer.stop()
-        # self._progress_panel.set_file_progress(0, 0)  # DEBUG
-        # self._progress_panel._bar_file.setVisible(False)
 
         self._log_manager.info("All conversions completed.")
         self._log_manager.info(
@@ -514,8 +473,15 @@ class MainWindow(QMainWindow):
             f"Log file: {self._log_manager._log_dir}"
         )
 
+        error_log_path = self._error_log.finalise()
+        if error_log_path is not None:
+            self._log_manager.info(
+                f"Error log: {error_log_path}"
+            )
+
         entries = self._log_manager.entries()
-        for i in range(1, 4):
+        extra = 1 if error_log_path is not None else 0
+        for i in range(1, 4 + extra):
             self._progress_panel.append_log(entries[-i])
 
         self._file_panel.setEnabled(True)
@@ -527,6 +493,26 @@ class MainWindow(QMainWindow):
         """Remove a finished thread from the active list."""
         if thread in self._threads:
             self._threads.remove(thread)
+
+    @Slot()
+    def _poll_progress(self) -> None:
+        """Poll the worker's progress queue and update the UI."""
+        for worker in self._workers:
+            while True:
+                item = worker.get_progress()
+                if item is None:
+                    break
+                current, total, message = item
+                self._progress_panel.set_file_progress(current, total)
+                match = re.search(r"Processing\s+\[(.+)\]", message)
+                if match:
+                    track_name = Path(match.group(1)).name
+                    self._log_manager.info(
+                        f"  Track {current}/{total}: {track_name}"
+                    )
+                    self._progress_panel.append_log(
+                        self._log_manager.entries()[-1]
+                    )
 
     # ------------------------------------------------------------------
     # Task building
@@ -557,8 +543,12 @@ class MainWindow(QMainWindow):
                             f"Skipping {src.name}: file must reside "
                             f"inside an Artist/Album folder hierarchy"
                         )
+                        file_type = "ISO"
+                        self._error_log.add_skipped(
+                            str(src), file_type,
+                            "File not inside Artist/Album folder hierarchy"
+                        )
                         continue
-                    # sacd_extract -y creates the album folder internally.                
                     dest = dest_dir / (src.stem + ".dsf")
                 else:
                     dest_dir = src.parent / "converted"
@@ -574,6 +564,11 @@ class MainWindow(QMainWindow):
                             f"Skipping {src.name}: file must reside "
                             f"inside an Artist/Album folder hierarchy"
                         )
+                        file_type = "DFF"
+                        self._error_log.add_skipped(
+                            str(src), file_type,
+                            "File not inside Artist/Album folder hierarchy"
+                        )
                         continue
                     dest = output_root / rel.with_suffix(".dsf")
                 else:
@@ -582,7 +577,6 @@ class MainWindow(QMainWindow):
                     source=src, destination=dest, converter="dff2dsf",
                 ))
         return tasks
-
 
     @staticmethod
     def _artist_album_relative(file_path: Path) -> Optional[Path]:
@@ -599,7 +593,6 @@ class MainWindow(QMainWindow):
         levels = list(parts[-4:-1])
         filename = parts[-1]
         return Path(*levels) / filename
-    
 
     @staticmethod
     def _iso_dest_dir(file_path: Path, output_root: Path) -> Optional[Path]:
@@ -613,10 +606,8 @@ class MainWindow(QMainWindow):
         parts = file_path.parts
         if len(parts) < 4:
             return None
-        # parts[-4:-1] = [..., Artist, Album] or [..., Artist, Album, CD1]
         levels = list(parts[-4:-1])
         return output_root / Path(*levels)
-
 
     # ------------------------------------------------------------------
     # Dialogs

@@ -1,18 +1,20 @@
 """
-Centralised logging for the HiResToolsGUI application.
+Centralised logging for HiResToolsGUI.
 
 Writes both to the in-memory ring buffer (displayed in the GUI) and to
-timestamped files under ``~/.hirestoolsgui/logs/``.
+timestamped files under ``~/.HiResToolsGUI/logs/``.
+
+Also provides :class:`ErrorLogManager` for per-conversion error logs
+that only persist to disk when non-successful events occur.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Deque, Optional
+from typing import Deque, List, Optional
 
 
 class LogEntry:
@@ -39,7 +41,7 @@ class LogManager:
         Directory where log files are written.  Created automatically.
     """
 
-    _DEFAULT_LOG_DIR = Path.home() / ".hirestoolsgui" / "logs"
+    _DEFAULT_LOG_DIR = Path.home() / ".HiResToolsGUI" / "logs"
 
     def __init__(
         self,
@@ -87,16 +89,14 @@ class LogManager:
         entry = LogEntry(timestamp, level, message)
         self._buffer.append(entry)
 
-        # Also write to file logger.
         log_method = getattr(self._logger, level.lower(), self._logger.info)
         log_method(message)
 
     def _setup_file_logger(self) -> logging.Logger:
         self._log_dir.mkdir(parents=True, exist_ok=True)
-        logger = logging.getLogger("dff2dsf_gui")
+        logger = logging.getLogger("HiResToolsGUI")
         logger.setLevel(logging.DEBUG)
 
-        # Avoid duplicate handlers on repeated instantiation.
         if logger.handlers:
             return logger
 
@@ -111,5 +111,115 @@ class LogManager:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         return logger
+
+
+class ErrorLogManager:
+    """
+    Per-conversion error log that only persists to disk when files are
+    not processed (failures or skipped).
+
+    Only entries for non-successful events are recorded.  If any such
+    event occurs, the entire buffer is flushed to a timestamped file
+    under the log directory.  Otherwise it is discarded.
+    """
+
+    def __init__(self, log_dir: Optional[Path] = None) -> None:
+        self._log_dir = log_dir or Path.home() / ".HiResToolsGUI" / "logs"
+        self._buffer: List[LogEntry] = []
+        self._has_entries = False
+        self._file_path: Optional[Path] = None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def add_failure(
+        self,
+        source: str,
+        file_type: str,
+        exit_code: int,
+        stderr: str = "",
+    ) -> None:
+        """
+        Record a conversion failure.
+
+        Parameters
+        ----------
+        source:
+            Absolute path to the source file.
+        file_type:
+            ``"DFF"`` or ``"ISO"``.
+        exit_code:
+            Process exit code.
+        stderr:
+            Standard error output from the converter, if any.
+        """
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        msg = f"FAILED [{file_type}] {source} (exit={exit_code})"
+        self._buffer.append(LogEntry(timestamp, "ERROR", msg))
+        if stderr:
+            self._buffer.append(
+                LogEntry(timestamp, "ERROR", f"  stderr: {stderr}")
+            )
+        self._has_entries = True
+
+    def add_skipped(
+        self,
+        source: str,
+        file_type: str,
+        reason: str,
+    ) -> None:
+        """
+        Record a file that was skipped (not processed).
+
+        Parameters
+        ----------
+        source:
+            Absolute path to the source file.
+        file_type:
+            ``"DFF"`` or ``"ISO"``.
+        reason:
+            Human-readable explanation (e.g. path validation, collision,
+            invalid folder structure).
+        """
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        msg = f"SKIPPED [{file_type}] {source} — {reason}"
+        self._buffer.append(LogEntry(timestamp, "WARNING", msg))
+        self._has_entries = True
+
+    def finalise(self) -> Optional[Path]:
+        """
+        Write the buffer to disk if any entries were recorded.
+
+        Returns the path to the error log file, or ``None`` if no
+        non-successful events occurred.
+        """
+        if not self._has_entries:
+            self._buffer.clear()
+            return None
+
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        filename = datetime.now().strftime("%Y%m%d_%H%M%S") + "_errors.log"
+        self._file_path = self._log_dir / filename
+
+        with open(self._file_path, "w", encoding="utf-8") as fh:
+            fh.write("HiResToolsGUI — Error Log\n")
+            fh.write("=" * 60 + "\n\n")
+            for entry in self._buffer:
+                fh.write(
+                    f"[{entry.timestamp}] [{entry.level}] {entry.message}\n"
+                )
+                fh.write("-" * 60 + "\n")
+
+        self._buffer.clear()
+        self._has_entries = False
+        return self._file_path
+
+    def reset(self) -> None:
+        """Discard the current buffer without writing."""
+        self._buffer.clear()
+        self._has_entries = False
+        self._file_path = None
+
 
 

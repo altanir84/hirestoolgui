@@ -30,7 +30,24 @@ class PathValidator:
 
     # Printable ASCII minus characters that are common trouble-makers
     # in command-line tools (backslash, backtick, dollar, etc.).
-    SAFE_CHARS = set(string.ascii_letters + string.digits + " /._-+:=(),@'![]#$%&")
+    
+    LATIN_EXTRA = (
+        "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØ"
+        "ÙÚÛÜÝÞß"
+        "àáâãäåæçèéêëìíîïðñòóôõöø"
+        "ùúûüýþÿ"
+        "ĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚě"
+        "ĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĹĺĻļĽľĿŀŁł"
+        "ŃńŅņŇňŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧ"
+        "ŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽž"
+    )
+
+    SAFE_CHARS = set(
+        string.ascii_letters +
+        string.digits +
+        LATIN_EXTRA +
+        " /._-+:=(),@'![]#$%&~"
+    )
 
     # ------------------------------------------------------------------
     # Public API
