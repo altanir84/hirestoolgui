@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ## Installation
 
 git clone <repository-url>
-cd dff2dsf_gui
+cd hirestoolgui
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-python main.py
+python3 main.py
 
 1. Configure the paths to dff2dsf and sacd_extract in the Converter Configuration panel. The application auto-detects them if they are on your $PATH.
 
