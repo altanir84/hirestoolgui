@@ -1,8 +1,10 @@
 # HiResToolsGUI
 
-A graphical interface for converting high-resolution audio files — **DFF to DSF** via `dff2dsf` and **SACD ISO to DSF** via `sacd_extract`.
+A graphical interface for converting high-resolution audio files in Linux OS.
 
-Built with PySide6 and Python 3.10+.
+**DFF to DSF** via `dff2dsf` and **SACD ISO to DSF** via `sacd_extract`.
+
+Built with PySide6 and Python 3.10+. 
 
 ---
 
@@ -31,8 +33,8 @@ Built with PySide6 and Python 3.10+.
 ## Requirements
 
 - **Python** 3.10 or later
-- **[dff2dsf](https://signalyst.com/)** — DFF to DSF command-line converter (Signalyst)
-- **[sacd_extract](https://github.com/setmind/sacd-ripper)** — SACD ISO extraction tool
+- **[dff2dsf](https://signalyst.com/)** — DFF to DSF command-line converter (Signalyst) - Linux Version
+- **[sacd_extract](https://github.com/setmind/sacd-ripper)** — SACD ISO extraction tool for Linux
 
 ### Python packages
 
@@ -77,7 +79,8 @@ python main.py
 
 ## Project Structure
 
-dff2dsf_gui/
+```text
+hirestoolgui/
 ├── main.py                         # Application entry point
 ├── requirements.txt                # Python dependencies
 └── app/
@@ -103,7 +106,7 @@ dff2dsf_gui/
         ├── output_panel.py         # Output mode selection (single root / per folder)
         ├── progress_panel.py       # Progress bars + cancellable log view
         └── sacd_panel.py           # SACD extraction options (channels, CUE, output format)
-
+```
 ---
 
 ## Configuration
