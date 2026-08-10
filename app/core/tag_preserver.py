@@ -53,6 +53,30 @@ class TagPreserver:
         except Exception:
             return False
 
+    def set_inferred_tags(
+        self,
+        source: Path,
+        artist: str,
+        album: str,
+        track_number: int,
+        track_title: str,
+    ) -> None:
+        """
+        Build ID3 tags from inferred metadata and store in cache.
+
+        Used when the source DFF has no tags and the user confirms
+        inferred values via the tag editor dialog.
+        """
+        from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK
+
+        tags = ID3()
+        tags.add(TIT2(encoding=3, text=track_title))
+        tags.add(TPE1(encoding=3, text=artist))
+        tags.add(TALB(encoding=3, text=album))
+        tags.add(TRCK(encoding=3, text=str(track_number)))
+        self._cache[source] = tags
+
+
     def apply_tags(self, source: Path, destination: Path) -> bool:
         """
         Write cached tags from *source* into *destination* (DSF).
@@ -75,6 +99,10 @@ class TagPreserver:
             return True
         except Exception:
             return False
+
+    def has_tags(self, source: Path) -> bool:
+        """Return ``True`` if tags are already cached for *source*."""
+        return source in self._cache    
 
     def clear(self) -> None:
         """Discard all cached tags."""

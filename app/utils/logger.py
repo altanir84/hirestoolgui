@@ -205,11 +205,12 @@ class ErrorLogManager:
         with open(self._file_path, "w", encoding="utf-8") as fh:
             fh.write("HiResToolsGUI — Error Log\n")
             fh.write("=" * 60 + "\n\n")
-            for entry in self._buffer:
+            for i, entry in enumerate(self._buffer):
+                if i > 0:
+                    fh.write("-" * 60 + "\n")
                 fh.write(
                     f"[{entry.timestamp}] [{entry.level}] {entry.message}\n"
                 )
-                fh.write("-" * 60 + "\n")
 
         self._buffer.clear()
         self._has_entries = False
@@ -220,6 +221,10 @@ class ErrorLogManager:
         self._buffer.clear()
         self._has_entries = False
         self._file_path = None
+
+
+
+
 
 
 

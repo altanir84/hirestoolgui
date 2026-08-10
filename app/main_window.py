@@ -13,11 +13,13 @@ import re
 import shutil
 import threading
 from pathlib import Path
+from mutagen.dsdiff import DSDIFF
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QMainWindow,
@@ -30,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from app.core.converter_worker import ConversionTask, ConverterWorker
 from app.core.path_validator import PathValidator
+from app.core.structure_analyzer import StructureAnalyzer
 from app.core.tag_preserver import TagPreserver
 from app.utils.logger import ErrorLogManager, LogManager
 from app.widgets.config_panel import ConfigPanel
@@ -37,6 +40,7 @@ from app.widgets.file_panel import FilePanel
 from app.widgets.output_panel import OutputPanel
 from app.widgets.progress_panel import ProgressPanel
 from app.widgets.sacd_panel import SacdPanel
+from app.widgets.tag_editor_dialog import TagEditorDialog
 
 
 class MainWindow(QMainWindow):
@@ -58,7 +62,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("HiResToolsGUI")
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(1200, 900)
 
         self._log_manager = LogManager()
         self._error_log = ErrorLogManager()
@@ -137,7 +141,7 @@ class MainWindow(QMainWindow):
 
         self._splitter.addWidget(upper)
         self._splitter.addWidget(lower)
-        self._splitter.setStretchFactor(0, 3)
+        self._splitter.setStretchFactor(0, 2)
         self._splitter.setStretchFactor(1, 1)
 
         root_layout.addWidget(self._splitter, 1)
@@ -331,10 +335,11 @@ class MainWindow(QMainWindow):
         if not self._confirm_conversion(tasks):
             return
 
-        for task in tasks:
-            if task.converter == "dff2dsf":
-                self._tag_preserver.cache_tags(task.source)
-
+        # Ensure DFF files have minimum tags before conversion.
+        dff_files = [
+            t.source for t in tasks if t.converter == "dff2dsf"
+        ]
+        self._ensure_tags(dff_files)
         self._task_map = {str(t.source): t.converter for t in tasks}
 
         self._running = True
@@ -503,16 +508,110 @@ class MainWindow(QMainWindow):
                 if item is None:
                     break
                 current, total, message = item
-                self._progress_panel.set_file_progress(current, total)
-                match = re.search(r"Processing\s+\[(.+)\]", message)
-                if match:
-                    track_name = Path(match.group(1)).name
-                    self._log_manager.info(
-                        f"  Track {current}/{total}: {track_name}"
-                    )
+
+                if current == 0 and total == 0:
+                    self._log_manager.info(message)
                     self._progress_panel.append_log(
                         self._log_manager.entries()[-1]
                     )
+                else:
+                    self._progress_panel.set_file_progress(current, total)
+                    match = re.search(r"Processing\s+\[(.+)\]", message)
+                    if match:
+                        track_name = Path(match.group(1)).name
+                        self._log_manager.info(
+                            f"  Track {current}/{total}: {track_name}"
+                        )
+                        self._progress_panel.append_log(
+                            self._log_manager.entries()[-1]
+                        )
+
+    # ------------------------------------------------------------------
+    # Tag assurance
+    # ------------------------------------------------------------------
+
+    def _ensure_tags(self, dff_files: List[Path]) -> None:
+        """
+        Verify that every DFF file has minimum ID3 tags (artist, album,
+        track title, track number).  For albums where tags are missing,
+        infer missing fields from folder structure and present the
+        :class:`TagEditorDialog` for user confirmation.
+
+        Existing tags are preserved and take precedence over inferred
+        values.
+        """
+        
+        albums = StructureAnalyzer.analyse(dff_files)
+        if not albums:
+            return
+
+        for album_info in albums:
+            # First pass: read existing tags and populate cache.
+            missing = False
+            for track in album_info.tracks:
+                try:
+                    audio = DSDIFF(str(track.path))
+                    tags = audio.tags
+                    if tags is None:
+                        missing = True
+                        continue
+
+                    required = {"TPE1", "TALB", "TIT2", "TRCK"}
+                    existing = {frame.FrameID for frame in tags.values()}
+                    if not required.issubset(existing):
+                        missing = True
+
+                    # Always cache what we have.
+                    self._tag_preserver._cache[track.path] = tags
+
+                    # Honour existing tags in the track info.
+                    tpe1 = tags.get("TPE1")
+                    talb = tags.get("TALB")
+                    tit2 = tags.get("TIT2")
+                    trck = tags.get("TRCK")
+
+                    if tpe1 and not album_info.artist:
+                        album_info.artist = str(tpe1)
+                    if talb and not album_info.album:
+                        album_info.album = str(talb)
+                    if tit2:
+                        track.track_title = str(tit2)
+                    if trck:
+                        try:
+                            track.track_number = int(str(trck).split("/")[0])
+                        except ValueError:
+                            pass
+                except Exception:
+                    missing = True
+
+            if not missing:
+                continue
+
+            # Fill remaining gaps from folder structure.
+            if not album_info.artist:
+                album_info.artist = StructureAnalyzer._normalise_case(
+                    album_info.artist or ""
+                )
+            if not album_info.album:
+                album_info.album = StructureAnalyzer._normalise_case(
+                    album_info.album or ""
+                )
+
+            dlg = TagEditorDialog(album_info, self)
+            if dlg.exec() == QDialog.Accepted:
+                updated = dlg.get_album_info()
+                for track in updated.tracks:
+                    self._tag_preserver.set_inferred_tags(
+                        track.path,
+                        artist=updated.artist,
+                        album=updated.album,
+                        track_number=track.track_number,
+                        track_title=track.track_title,
+                    )
+
+
+
+
 
     # ------------------------------------------------------------------
     # Task building
@@ -543,9 +642,8 @@ class MainWindow(QMainWindow):
                             f"Skipping {src.name}: file must reside "
                             f"inside an Artist/Album folder hierarchy"
                         )
-                        file_type = "ISO"
                         self._error_log.add_skipped(
-                            str(src), file_type,
+                            str(src), "ISO",
                             "File not inside Artist/Album folder hierarchy"
                         )
                         continue
@@ -564,9 +662,8 @@ class MainWindow(QMainWindow):
                             f"Skipping {src.name}: file must reside "
                             f"inside an Artist/Album folder hierarchy"
                         )
-                        file_type = "DFF"
                         self._error_log.add_skipped(
-                            str(src), file_type,
+                            str(src), "DFF",
                             "File not inside Artist/Album folder hierarchy"
                         )
                         continue
