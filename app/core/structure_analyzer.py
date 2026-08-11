@@ -57,6 +57,7 @@ class StructureAnalyzer:
     # Public API
     # ------------------------------------------------------------------
 
+
     @classmethod
     def analyse(cls, files: List[Path]) -> List[AlbumInfo]:
         """
@@ -121,10 +122,12 @@ class StructureAnalyzer:
 
         return album_dir, disc
 
+
     @classmethod
     def _is_disc_folder(cls, name: str) -> bool:
         """Return ``True`` if *name* looks like a disc sub-folder."""
         return bool(_DISC_PATTERNS.match(name))
+
 
     @classmethod
     def _infer_track(cls, file_path: Path) -> TrackInfo:
@@ -143,6 +146,7 @@ class StructureAnalyzer:
             track_number=number,
             track_title=cls._normalise_case(title),
         )
+
 
     @staticmethod
     def _normalise_case(text: str) -> str:

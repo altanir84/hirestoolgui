@@ -156,10 +156,12 @@ class FileScanner:
 
         return dir_node
 
+
     @staticmethod
     def _is_dff(path: Path) -> bool:
         """Return ``True`` if *path* has a ``.dff`` / ``.DFF`` suffix."""
         return path.suffix.lower() == ".dff"
+
 
     @staticmethod
     def _is_iso(path: Path) -> bool:

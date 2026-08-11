@@ -217,9 +217,6 @@ class ConverterWorker(QObject):
         return exit_code, stderr
 
 
-
-
-
     def _convert_2064_to_2048(self, input_path: Path, output_path: Path) -> None:
         """
         Convert an ISO from 2064-byte sectors to 2048-byte sectors.
@@ -270,6 +267,7 @@ class ConverterWorker(QObject):
             return -1, "TIMEOUT"
         except Exception as exc:
             return -2, str(exc)
+
 
     def _run_process_with_progress(self, args: List[str]):
         """
@@ -358,8 +356,6 @@ class ConverterWorker(QObject):
             return self._progress_queue.get_nowait()
         except queue.Empty:
             return None
-
-
 
     # ------------------------------------------------------------------
     # Helpers

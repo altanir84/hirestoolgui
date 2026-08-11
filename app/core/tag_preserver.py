@@ -53,6 +53,7 @@ class TagPreserver:
         except Exception:
             return False
 
+
     @staticmethod
     def _complete_tags(
         tags,
@@ -74,7 +75,6 @@ class TagPreserver:
             tags.add(TALB(encoding=3, text=album))
         if "TRCK" not in tags:
             tags.add(TRCK(encoding=3, text=str(track_number)))
-
 
 
     def apply_tags(self, source: Path, destination: Path) -> bool:
@@ -100,9 +100,11 @@ class TagPreserver:
         except Exception:
             return False
 
+
     def has_tags(self, source: Path) -> bool:
         """Return ``True`` if tags are already cached for *source*."""
         return source in self._cache    
+
 
     def clear(self) -> None:
         """Discard all cached tags."""
