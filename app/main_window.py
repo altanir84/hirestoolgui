@@ -14,6 +14,7 @@ import shutil
 import threading
 from pathlib import Path
 from mutagen.dsdiff import DSDIFF
+from muagen.id3 import ID3
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
@@ -537,16 +538,13 @@ class MainWindow(QMainWindow):
         infer missing fields from folder structure and present the
         :class:`TagEditorDialog` for user confirmation.
 
-        Existing tags are preserved and take precedence over inferred
-        values.
+        Existing tags are preserved; only missing fields are added.
         """
-        
         albums = StructureAnalyzer.analyse(dff_files)
         if not albums:
             return
 
         for album_info in albums:
-            # First pass: read existing tags and populate cache.
             missing = False
             for track in album_info.tracks:
                 try:
@@ -561,10 +559,8 @@ class MainWindow(QMainWindow):
                     if not required.issubset(existing):
                         missing = True
 
-                    # Always cache what we have.
                     self._tag_preserver._cache[track.path] = tags
 
-                    # Honour existing tags in the track info.
                     tpe1 = tags.get("TPE1")
                     talb = tags.get("TALB")
                     tit2 = tags.get("TIT2")
@@ -587,7 +583,6 @@ class MainWindow(QMainWindow):
             if not missing:
                 continue
 
-            # Fill remaining gaps from folder structure.
             if not album_info.artist:
                 album_info.artist = StructureAnalyzer._normalise_case(
                     album_info.artist or ""
@@ -601,16 +596,17 @@ class MainWindow(QMainWindow):
             if dlg.exec() == QDialog.Accepted:
                 updated = dlg.get_album_info()
                 for track in updated.tracks:
-                    self._tag_preserver.set_inferred_tags(
-                        track.path,
+                    tags = self._tag_preserver._cache.get(track.path)
+                    if tags is None:
+                        tags = ID3()
+                    self._tag_preserver._complete_tags(
+                        tags,
                         artist=updated.artist,
                         album=updated.album,
                         track_number=track.track_number,
                         track_title=track.track_title,
                     )
-
-
-
+                    self._tag_preserver._cache[track.path] = tags
 
 
     # ------------------------------------------------------------------
