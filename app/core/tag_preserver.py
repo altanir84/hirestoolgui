@@ -12,7 +12,7 @@ from typing import Dict, Optional
 
 from mutagen.dsdiff import DSDIFF
 from mutagen.dsf import DSF
-from mutagen.id3 import TIT2, TPE1, TALB, TRCK
+from mutagen.id3 import TIT2, TPE1, TALB, TRCK, ID3
 
 
 class TagPreserver:

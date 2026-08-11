@@ -14,7 +14,7 @@ import shutil
 import threading
 from pathlib import Path
 from mutagen.dsdiff import DSDIFF
-from muagen.id3 import ID3
+from mutagen.id3 import ID3
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
