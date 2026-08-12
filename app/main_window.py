@@ -2,23 +2,19 @@
 Main application window for HiResToolsGUI.
 
 Wires together the config panel, file tree, output panel, SACD options,
-and progress panel.  Manages the conversion lifecycle for both DFF and
-ISO sources.
+and progress panel.  Delegates conversion orchestration, task building,
+tag assurance, and dialogs to dedicated modules.
 """
 
 from __future__ import annotations
 
 import os
-import re
-import shutil
-import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
-from PySide6.QtCore import QThread, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -28,11 +24,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.converter_worker import ConversionTask, ConverterWorker
+from app.core.conversion_orchestrator import ConversionOrchestrator
 from app.core.path_validator import PathValidator
+from app.core.tag_assurance import TagAssurance
 from app.core.tag_preserver import TagPreserver
+from app.core.task_builder import TaskBuilder
 from app.utils.logger import ErrorLogManager, LogManager
 from app.widgets.config_panel import ConfigPanel
+from app.widgets.dialogs import Dialogs
 from app.widgets.file_panel import FilePanel
 from app.widgets.output_panel import OutputPanel
 from app.widgets.progress_panel import ProgressPanel
@@ -58,23 +57,15 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("HiResToolsGUI")
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(1200, 900)
 
         self._log_manager = LogManager()
         self._error_log = ErrorLogManager()
-        self._cancel_event = threading.Event()
         self._tag_preserver = TagPreserver()
-        self._threads: List[QThread] = []
-        self._workers: List[ConverterWorker] = []
-        self._task_map: Dict[str, str] = {}
+        self._task_builder = TaskBuilder(self._log_manager, self._error_log)
+        self._tag_assurance = TagAssurance(self._tag_preserver)
+        self._orchestrator: Optional[ConversionOrchestrator] = None
         self._running = False
-        self._completed_tasks = 0
-        self._success_count = 0
-        self._failed_count = 0
-        self._total_tasks = 0
-
-        self._progress_timer = QTimer(self)
-        self._progress_timer.timeout.connect(self._poll_progress)
 
         self._build_ui()
         self._connect_signals()
@@ -137,7 +128,7 @@ class MainWindow(QMainWindow):
 
         self._splitter.addWidget(upper)
         self._splitter.addWidget(lower)
-        self._splitter.setStretchFactor(0, 3)
+        self._splitter.setStretchFactor(0, 2)
         self._splitter.setStretchFactor(1, 1)
 
         root_layout.addWidget(self._splitter, 1)
@@ -148,12 +139,22 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Connect all child-widget signals to MainWindow slots."""
-        self._config_panel.dff2dsf_changed.connect(self._on_binary_changed)
-        self._config_panel.sacd_extract_changed.connect(self._on_binary_changed)
+        self._config_panel.dff2dsf_changed.connect(
+            self._on_binary_changed
+        )
+        self._config_panel.sacd_extract_changed.connect(
+            self._on_binary_changed
+        )
         self._output_panel.mode_changed.connect(self._on_mode_changed)
-        self._file_panel.scan_completed.connect(self._update_start_button)
-        self._file_panel.selection_changed.connect(self._on_selection_changed)
-        self._sacd_panel.options_changed.connect(self._update_start_button)
+        self._file_panel.scan_completed.connect(
+            self._update_start_button
+        )
+        self._file_panel.selection_changed.connect(
+            self._on_selection_changed
+        )
+        self._sacd_panel.options_changed.connect(
+            self._update_start_button
+        )
         self._btn_start.clicked.connect(self._on_start)
         self._progress_panel.cancel_requested.connect(self._on_cancel)
 
@@ -224,7 +225,9 @@ class MainWindow(QMainWindow):
         self._update_start_button()
 
     @Slot(str, object)
-    def _on_mode_changed(self, _mode: str, _root: Optional[Path]) -> None:
+    def _on_mode_changed(
+        self, _mode: str, _root: Optional[Path]
+    ) -> None:
         self._update_start_button()
 
     @Slot(int)
@@ -238,7 +241,9 @@ class MainWindow(QMainWindow):
         """Refresh the validation indicators for both binaries."""
         dff2dsf = self._config_panel.dff2dsf_path()
         if dff2dsf and self._validate_binary(dff2dsf):
-            self._config_panel.set_dff2dsf_status(True, f"Found: {dff2dsf}")
+            self._config_panel.set_dff2dsf_status(
+                True, f"Found: {dff2dsf}"
+            )
         else:
             self._config_panel.set_dff2dsf_status(
                 False, "dff2dsf binary not found or not executable"
@@ -246,7 +251,9 @@ class MainWindow(QMainWindow):
 
         sacd = self._config_panel.sacd_extract_path()
         if sacd and self._validate_binary(sacd):
-            self._config_panel.set_sacd_extract_status(True, f"Found: {sacd}")
+            self._config_panel.set_sacd_extract_status(
+                True, f"Found: {sacd}"
+            )
         else:
             self._config_panel.set_sacd_extract_status(
                 False, "sacd_extract binary not found or not executable"
@@ -263,7 +270,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_start(self) -> None:
-        """Validate inputs, build tasks, confirm, and spawn worker thread."""
+        """Validate inputs, build tasks, confirm, and spawn orchestrator."""
         checked = self._file_panel.checked_files()
         has_dff = any(f.suffix.lower() == ".dff" for f in checked)
         has_iso = any(f.suffix.lower() == ".iso" for f in checked)
@@ -300,10 +307,16 @@ class MainWindow(QMainWindow):
                 self._log_manager.warning(
                     f"Path rejected: {rp.name} — {reason}"
                 )
-                file_type = "ISO" if rp.suffix.lower() == ".iso" else "DFF"
-                self._error_log.add_skipped(str(rp), file_type, reason)
+                file_type = (
+                    "ISO" if rp.suffix.lower() == ".iso" else "DFF"
+                )
+                self._error_log.add_skipped(
+                    str(rp), file_type, reason
+                )
 
-        if not self._warn_rejected_files(rejected, len(valid)):
+        if not Dialogs.warn_rejected_files(
+            self, rejected, len(valid)
+        ):
             return
 
         if not valid:
@@ -315,7 +328,7 @@ class MainWindow(QMainWindow):
 
         mode = self._output_panel.output_mode()
         output_root = self._output_panel.output_root()
-        tasks = self._build_tasks(valid, mode, output_root)
+        tasks = self._task_builder.build(valid, mode, output_root)
 
         if not tasks:
             QMessageBox.information(
@@ -324,443 +337,63 @@ class MainWindow(QMainWindow):
             )
             return
 
-        tasks, overwrite = self._handle_destination_collisions(tasks)
+        tasks, overwrite = Dialogs.handle_destination_collisions(
+            self, tasks
+        )
         if not tasks:
             return
 
-        if not self._confirm_conversion(tasks):
+        if not Dialogs.confirm_conversion(self, tasks):
             return
 
-        for task in tasks:
-            if task.converter == "dff2dsf":
-                self._tag_preserver.cache_tags(task.source)
-
-        self._task_map = {str(t.source): t.converter for t in tasks}
+        # Ensure DFF files have minimum tags before conversion.
+        dff_files = [
+            t.source for t in tasks if t.converter == "dff2dsf"
+        ]
+        self._tag_assurance.ensure_tags(dff_files)
 
         self._running = True
-        self._cancel_event.clear()
         self._btn_start.setEnabled(False)
-        self._completed_tasks = 0
-        self._success_count = 0
-        self._failed_count = 0
-        self._total_tasks = len(tasks)
-        self._progress_panel.reset()
-        self._progress_panel.set_overall_progress(0, self._total_tasks)
-        self._error_log.reset()
 
         self._file_panel.setEnabled(False)
         self._output_panel.setEnabled(False)
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
 
-        self._log_manager.info(
-            f"Starting conversion of {len(tasks)} file(s) (mode={mode})"
-        )
-
-        thread = QThread()
-        worker = ConverterWorker(
-            str(self._config_panel.dff2dsf_path() or ""),
-            str(self._config_panel.sacd_extract_path() or ""),
-            tasks,
+        self._orchestrator = ConversionOrchestrator(
+            log_manager=self._log_manager,
+            error_log=self._error_log,
+            tag_preserver=self._tag_preserver,
+            progress_panel=self._progress_panel,
+            binary_dff2dsf=str(
+                self._config_panel.dff2dsf_path() or ""
+            ),
+            binary_sacd_extract=str(
+                self._config_panel.sacd_extract_path() or ""
+            ),
             sacd_stereo=self._sacd_panel.stereo(),
             sacd_multichannel=self._sacd_panel.multichannel(),
             sacd_cue=self._sacd_panel.cue_sheet(),
             sacd_output_format=self._sacd_panel.output_format_flag(),
-            cancel_event=self._cancel_event,
             overwrite=overwrite,
         )
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.task_started.connect(self._on_task_started)
-        worker.task_finished.connect(self._on_task_finished)
-        worker.task_skipped.connect(self._on_task_skipped)
-        worker.all_done.connect(self._on_worker_done)
-        thread.finished.connect(lambda t=thread: self._on_thread_finished(t))
-
-        self._threads.append(thread)
-        self._workers.append(worker)
-
-        self._progress_timer.start(200)
-        thread.start()
+        self._orchestrator.finished.connect(self._on_batch_finished)
+        self._orchestrator.start(tasks)
 
     @Slot()
     def _on_cancel(self) -> None:
         """Request graceful cancellation."""
-        self._cancel_event.set()
-        self._log_manager.warning(
-            "Cancellation requested — finishing current file..."
-        )
+        if self._orchestrator is not None:
+            self._orchestrator.cancel()
         self._progress_panel._btn_cancel.setEnabled(False)
 
-    @Slot(str, str)
-    def _on_task_started(self, source: str, dest: str) -> None:
-        self._log_manager.info(f"Converting: {Path(source).name}")
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
-
-    @Slot(str, str, int, str)
-    def _on_task_finished(
-        self, source: str, dest: str, exit_code: int, stderr: str
+    @Slot(int, int, int)
+    def _on_batch_finished(
+        self, _success: int, _failed: int, _total: int
     ) -> None:
-        self._completed_tasks += 1
-        self._progress_panel.set_overall_progress(
-            self._completed_tasks, self._total_tasks
-        )
-
-        converter_type = self._task_map.get(source, "")
-
-        if exit_code == 0:
-            self._success_count += 1
-            self._log_manager.success(f"OK: {Path(source).name}")
-
-            if converter_type == "dff2dsf":
-                applied = self._tag_preserver.apply_tags(
-                    Path(source), Path(dest)
-                )
-                if not applied:
-                    self._log_manager.warning(
-                        f"Could not preserve tags for: {Path(source).name}"
-                    )
-
-            if converter_type == "sacd_extract":
-                dest_path = Path(dest)
-                dest_dir = dest_path.parent
-                for subdir in dest_dir.iterdir():
-                    if subdir.is_dir():
-                        for f in subdir.iterdir():
-                            shutil.move(str(f), str(dest_dir / f.name))
-                        subdir.rmdir()
-                        break
-        else:
-            self._failed_count += 1
-            self._log_manager.error(
-                f"FAILED: {Path(source).name} (exit={exit_code})"
-            )
-            if stderr and exit_code != 0:
-                self._log_manager.error(f"  stderr: {stderr}")
-
-            file_type = "ISO" if converter_type == "sacd_extract" else "DFF"
-            self._error_log.add_failure(source, file_type, exit_code, stderr)
-
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
-
-    @Slot(str, str)
-    def _on_task_skipped(self, source: str, reason: str) -> None:
-        self._log_manager.warning(
-            f"SKIPPED: {Path(source).name} — {reason}"
-        )
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
-        file_type = "ISO" if source.lower().endswith(".iso") else "DFF"
-        self._error_log.add_skipped(source, file_type, reason)
-
-    @Slot()
-    def _on_worker_done(self) -> None:
-        """Finalise the UI when the worker signals completion."""
-        self._progress_timer.stop()
+        """Re-enable UI after batch completion."""
         self._running = False
-        self._workers.clear()
-        self._tag_preserver.clear()
-
-        self._progress_panel.conversion_finished()
-
-        self._log_manager.info("All conversions completed.")
-        self._log_manager.info(
-            f"Summary: {self._success_count} succeeded, "
-            f"{self._failed_count} failed, "
-            f"{self._total_tasks} total"
-        )
-        self._log_manager.info(
-            f"Log file: {self._log_manager._log_dir}"
-        )
-
-        error_log_path = self._error_log.finalise()
-        if error_log_path is not None:
-            self._log_manager.info(
-                f"Error log: {error_log_path}"
-            )
-
-        entries = self._log_manager.entries()
-        extra = 1 if error_log_path is not None else 0
-        for i in range(1, 4 + extra):
-            self._progress_panel.append_log(entries[-i])
-
         self._file_panel.setEnabled(True)
         self._output_panel.setEnabled(True)
         self._config_panel.setEnabled(True)
         self._update_start_button()
-
-    def _on_thread_finished(self, thread: QThread) -> None:
-        """Remove a finished thread from the active list."""
-        if thread in self._threads:
-            self._threads.remove(thread)
-
-    @Slot()
-    def _poll_progress(self) -> None:
-        """Poll the worker's progress queue and update the UI."""
-        for worker in self._workers:
-            while True:
-                item = worker.get_progress()
-                if item is None:
-                    break
-                current, total, message = item
-                self._progress_panel.set_file_progress(current, total)
-                match = re.search(r"Processing\s+\[(.+)\]", message)
-                if match:
-                    track_name = Path(match.group(1)).name
-                    self._log_manager.info(
-                        f"  Track {current}/{total}: {track_name}"
-                    )
-                    self._progress_panel.append_log(
-                        self._log_manager.entries()[-1]
-                    )
-
-    # ------------------------------------------------------------------
-    # Task building
-    # ------------------------------------------------------------------
-
-    def _build_tasks(
-        self,
-        files: List[Path],
-        mode: str,
-        output_root: Optional[Path],
-    ) -> List[ConversionTask]:
-        """
-        Build :class:`ConversionTask` objects for each file.
-
-        DFF files use ``dff2dsf``; ISO files use ``sacd_extract``.
-        For ISO files in single-root mode, the output directory points
-        to the *Artist* folder because ``sacd_extract -y`` creates the
-        album sub-folder automatically.
-        """
-        tasks: List[ConversionTask] = []
-
-        for src in files:
-            if src.suffix.lower() == ".iso":
-                if mode == OutputPanel.MODE_SINGLE:
-                    dest_dir = self._iso_dest_dir(src, output_root)
-                    if dest_dir is None:
-                        self._log_manager.warning(
-                            f"Skipping {src.name}: file must reside "
-                            f"inside an Artist/Album folder hierarchy"
-                        )
-                        file_type = "ISO"
-                        self._error_log.add_skipped(
-                            str(src), file_type,
-                            "File not inside Artist/Album folder hierarchy"
-                        )
-                        continue
-                    dest = dest_dir / (src.stem + ".dsf")
-                else:
-                    dest_dir = src.parent / "converted"
-                    dest = dest_dir / (src.stem + ".dsf")
-                tasks.append(ConversionTask(
-                    source=src, destination=dest, converter="sacd_extract",
-                ))
-            else:
-                if mode == OutputPanel.MODE_SINGLE:
-                    rel = self._artist_album_relative(src)
-                    if rel is None:
-                        self._log_manager.warning(
-                            f"Skipping {src.name}: file must reside "
-                            f"inside an Artist/Album folder hierarchy"
-                        )
-                        file_type = "DFF"
-                        self._error_log.add_skipped(
-                            str(src), file_type,
-                            "File not inside Artist/Album folder hierarchy"
-                        )
-                        continue
-                    dest = output_root / rel.with_suffix(".dsf")
-                else:
-                    dest = src.parent / "converted" / (src.stem + ".dsf")
-                tasks.append(ConversionTask(
-                    source=src, destination=dest, converter="dff2dsf",
-                ))
-        return tasks
-
-    @staticmethod
-    def _artist_album_relative(file_path: Path) -> Optional[Path]:
-        """
-        Derive the relative ``Artist/Album[/Disc]/filename`` path from
-        an absolute *file_path*.
-
-        Returns ``None`` when fewer than two parent directories exist
-        above the file.
-        """
-        parts = file_path.parts
-        if len(parts) < 4:
-            return None
-        levels = list(parts[-4:-1])
-        filename = parts[-1]
-        return Path(*levels) / filename
-
-    @staticmethod
-    def _iso_dest_dir(file_path: Path, output_root: Path) -> Optional[Path]:
-        """
-        Compute the destination directory for an ISO extraction.
-
-        Returns ``output_root/Artist/Album[/Disc]`` so that
-        ``sacd_extract -y <dir>`` writes tracks into the correct
-        location without creating an extra nested folder.
-        """
-        parts = file_path.parts
-        if len(parts) < 4:
-            return None
-        levels = list(parts[-4:-1])
-        return output_root / Path(*levels)
-
-    # ------------------------------------------------------------------
-    # Dialogs
-    # ------------------------------------------------------------------
-
-    def _warn_rejected_files(
-        self, rejected: List[Tuple[Path, str]], valid_count: int
-    ) -> bool:
-        """
-        Show a dialog listing path-rejected files.
-
-        Loops until the user chooses Continue or Cancel.  Export List
-        saves the list and re-opens the dialog.
-        """
-        if not rejected:
-            return True
-
-        while True:
-            lines = []
-            for rp, reason in rejected:
-                lines.append(f"• {rp.name}")
-                lines.append(f"  {reason}")
-            detail = "\n".join(lines)
-
-            msg = (
-                f"{len(rejected)} file(s) have unsafe characters in "
-                f"their paths and will be skipped.\n\n"
-                f"{detail}\n\n"
-                f"{valid_count} file(s) remain valid for conversion."
-            )
-
-            dlg = QMessageBox(self)
-            dlg.setWindowTitle("Path Validation Warning")
-            dlg.setText(msg)
-            dlg.setIcon(QMessageBox.Warning)
-
-            btn_continue = dlg.addButton(
-                "Continue Anyway", QMessageBox.AcceptRole
-            )
-            btn_export = dlg.addButton(
-                "Export List...", QMessageBox.ActionRole
-            )
-            btn_cancel = dlg.addButton("Cancel", QMessageBox.RejectRole)
-
-            dlg.exec()
-            clicked = dlg.clickedButton()
-
-            if clicked is btn_continue:
-                return True
-
-            if clicked is btn_cancel:
-                return False
-
-            if clicked is btn_export:
-                path, _ = QFileDialog.getSaveFileName(
-                    self, "Save Rejected Files List",
-                    str(Path.home() / "rejected_files.txt"),
-                    "Text Files (*.txt)",
-                )
-                if path:
-                    with open(path, "w", encoding="utf-8") as fh:
-                        fh.write("Rejected files — HiResToolsGUI\n")
-                        fh.write("=" * 60 + "\n\n")
-                        for rp, reason in rejected:
-                            fh.write(f"{rp}\n  {reason}\n\n")
-                    self._log_manager.info(
-                        f"Rejected files list exported to {path}"
-                    )
-
-    def _handle_destination_collisions(
-        self, tasks: List[ConversionTask]
-    ) -> Tuple[List[ConversionTask], bool]:
-        """
-        Scan *tasks* for pre-existing destination files.
-
-        Returns ``(tasks, overwrite)``.
-        """
-        collisions = [t for t in tasks if t.destination.exists()]
-        if not collisions:
-            return tasks, False
-
-        names = "\n".join(
-            f"  • {t.destination.name}" for t in collisions[:15]
-        )
-        suffix = (
-            f"\n  ... and {len(collisions) - 15} more"
-            if len(collisions) > 15
-            else ""
-        )
-
-        msg = (
-            f"{len(collisions)} destination file(s) already exist:\n\n"
-            f"{names},{suffix}\n\n"
-            f"How should these be handled?"
-        )
-
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("Destination Files Already Exist")
-        dlg.setText(msg)
-        dlg.setIcon(QMessageBox.Warning)
-
-        btn_skip = dlg.addButton(
-            "Skip Existing", QMessageBox.AcceptRole
-        )
-        btn_overwrite = dlg.addButton(
-            "Overwrite All", QMessageBox.DestructiveRole
-        )
-        btn_cancel = dlg.addButton("Cancel", QMessageBox.RejectRole)
-
-        dlg.exec()
-        clicked = dlg.clickedButton()
-
-        if clicked is btn_cancel:
-            return [], False
-        if clicked is btn_overwrite:
-            return tasks, True
-        return [t for t in tasks if not t.destination.exists()], False
-
-    def _confirm_conversion(self, tasks: List[ConversionTask]) -> bool:
-        """
-        Show a summary dialog before conversion begins.
-
-        Returns ``True`` when the user confirms.
-        """
-        folders = sorted({t.destination.parent for t in tasks})
-        folder_list = "\n".join(f"  • {f}" for f in folders[:5])
-        if len(folders) > 5:
-            folder_list += f"\n  ... and {len(folders) - 5} more"
-
-        iso_count = sum(
-            1 for t in tasks if t.converter == "sacd_extract"
-        )
-        dff_count = sum(
-            1 for t in tasks if t.converter == "dff2dsf"
-        )
-
-        msg = (
-            f"Ready to convert {len(tasks)} file(s) to "
-            f"{len(folders)} destination folder(s):\n\n"
-            f"  DFF → dff2dsf: {dff_count}\n"
-            f"  ISO → sacd_extract: {iso_count}\n\n"
-            f"{folder_list}\n\n"
-            f"Proceed?"
-        )
-
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("Confirm Conversion")
-        dlg.setText(msg)
-        dlg.setIcon(QMessageBox.Question)
-        dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        dlg.setDefaultButton(QMessageBox.Yes)
-
-        return dlg.exec() == QMessageBox.Yes
-
-
-

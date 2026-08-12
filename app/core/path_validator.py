@@ -77,6 +77,7 @@ class PathValidator:
                 )
         return True, ""
 
+
     @classmethod
     def filter_batch(
         cls,

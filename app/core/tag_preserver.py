@@ -12,7 +12,7 @@ from typing import Dict, Optional
 
 from mutagen.dsdiff import DSDIFF
 from mutagen.dsf import DSF
-from mutagen.id3 import ID3
+from mutagen.id3 import TIT2, TPE1, TALB, TRCK, ID3
 
 
 class TagPreserver:
@@ -53,6 +53,30 @@ class TagPreserver:
         except Exception:
             return False
 
+
+    @staticmethod
+    def _complete_tags(
+        tags,
+        artist: str,
+        album: str,
+        track_number: int,
+        track_title: str,
+    ) -> None:
+        """
+        Ensure *tags* has the minimum required frames, adding only
+        what is missing.  Existing frames are preserved.
+        """
+        
+        if "TIT2" not in tags:
+            tags.add(TIT2(encoding=3, text=track_title))
+        if "TPE1" not in tags:
+            tags.add(TPE1(encoding=3, text=artist))
+        if "TALB" not in tags:
+            tags.add(TALB(encoding=3, text=album))
+        if "TRCK" not in tags:
+            tags.add(TRCK(encoding=3, text=str(track_number)))
+
+
     def apply_tags(self, source: Path, destination: Path) -> bool:
         """
         Write cached tags from *source* into *destination* (DSF).
@@ -75,6 +99,12 @@ class TagPreserver:
             return True
         except Exception:
             return False
+
+
+    def has_tags(self, source: Path) -> bool:
+        """Return ``True`` if tags are already cached for *source*."""
+        return source in self._cache    
+
 
     def clear(self) -> None:
         """Discard all cached tags."""

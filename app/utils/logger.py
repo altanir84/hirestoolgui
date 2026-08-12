@@ -50,7 +50,9 @@ class LogManager:
     ) -> None:
         self._buffer: Deque[LogEntry] = deque(maxlen=max_entries)
         self._log_dir = log_dir or self._DEFAULT_LOG_DIR
+        self._current_log_file: Optional[Path] = None
         self._logger = self._setup_file_logger()
+        
 
     # ------------------------------------------------------------------
     # Public API
@@ -80,6 +82,11 @@ class LogManager:
         """Purge the in-memory buffer (file logs are preserved)."""
         self._buffer.clear()
 
+    def log_file_path(self) -> Optional[Path]:
+        """Return the path to the current log file."""
+        return self._current_log_file
+
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
@@ -102,6 +109,7 @@ class LogManager:
 
         filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".log"
         file_path = self._log_dir / filename
+        self._current_log_file = file_path
         handler = logging.FileHandler(str(file_path), encoding="utf-8")
         handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
@@ -205,11 +213,12 @@ class ErrorLogManager:
         with open(self._file_path, "w", encoding="utf-8") as fh:
             fh.write("HiResToolsGUI — Error Log\n")
             fh.write("=" * 60 + "\n\n")
-            for entry in self._buffer:
+            for i, entry in enumerate(self._buffer):
+                if i > 0:
+                    fh.write("-" * 60 + "\n")
                 fh.write(
                     f"[{entry.timestamp}] [{entry.level}] {entry.message}\n"
                 )
-                fh.write("-" * 60 + "\n")
 
         self._buffer.clear()
         self._has_entries = False
@@ -220,6 +229,10 @@ class ErrorLogManager:
         self._buffer.clear()
         self._has_entries = False
         self._file_path = None
+
+
+
+
 
 
 

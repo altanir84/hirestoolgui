@@ -154,10 +154,48 @@ class ConverterWorker(QObject):
         """
         Invoke ``sacd_extract`` with the configured flags.
 
-        Reads stdout line-by-line to emit ``task_progress`` for each
-        track processed.
+        Automatically converts ISO from sector size 2064 to 2048 if
+        needed, using a temporary file in the output directory.
         """
-        args = [self._binary_sacd_extract, self._sacd_output_format, "-c", "-i", source]
+        actual_source = source
+        temp_path = None
+
+        src_path = Path(source)
+        size = src_path.stat().st_size
+
+        self._progress_queue.put((
+            0, 0,
+            "Evaluating ISO file compatibility..."
+        ))
+
+        if size % 2048 != 0 and size % 2064 == 0:
+            self._progress_queue.put((
+                0, 0,
+                "Incompatible SACD detected (2064-byte sectors). Attempting workaround..."
+            ))
+
+            temp_path = Path(output_dir) / ".hirestoolsgui_temp.iso"
+
+            try:
+                self._convert_2064_to_2048(src_path, temp_path)
+                actual_source = str(temp_path)
+
+                converted_size = temp_path.stat().st_size
+                sectors = size // 2064
+                self._progress_queue.put((0, 0, f"  Sectors: {sectors}"))
+                self._progress_queue.put((0, 0, f"  Original size: {size} bytes"))
+                self._progress_queue.put((0, 0, f"  Converted size: {converted_size} bytes"))
+                self._progress_queue.put((0, 0, "  2064→2048 conversion completed successfully"))
+                self._progress_queue.put((0, 0, "  Proceeding with sacd_extract extraction..."))
+            except Exception as exc:
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+                return -1, f"ISO sector conversion failed: {exc}"
+
+        args = [
+            self._binary_sacd_extract,
+            self._sacd_output_format, "-c", "-i", actual_source,
+        ]
 
         if self._sacd_stereo:
             args.append("-2")
@@ -168,7 +206,52 @@ class ConverterWorker(QObject):
 
         args.extend(["-y", output_dir])
 
-        return self._run_process_with_progress(args)
+        exit_code, stderr = self._run_process_with_progress(args)
+
+        if temp_path is not None and temp_path.exists():
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        return exit_code, stderr
+
+
+    def _convert_2064_to_2048(self, input_path: Path, output_path: Path) -> None:
+        """
+        Convert an ISO from 2064-byte sectors to 2048-byte sectors.
+
+        Removes 12-byte header and 4-byte trailer from each sector.
+        Emits progress via the progress queue every 10%.
+        """
+        SECTOR_IN = 2064
+        SECTOR_OUT = 2048
+        HEAD = 12
+
+        size = input_path.stat().st_size
+        if size % SECTOR_IN != 0:
+            raise ValueError(
+                f"File does not appear to use {SECTOR_IN}-byte sectors "
+                f"(size={size}, remainder={size % SECTOR_IN})"
+            )
+
+        sectors = size // SECTOR_IN
+        last_reported = -1
+
+        with input_path.open("rb") as fin, output_path.open("wb") as fout:
+            for i in range(sectors):
+                block = fin.read(SECTOR_IN)
+                if len(block) != SECTOR_IN:
+                    raise IOError(f"Incomplete read at sector {i}")
+                fout.write(block[HEAD:HEAD + SECTOR_OUT])
+
+                pct = (i + 1) * 100 // sectors
+                if pct >= last_reported + 10:
+                    last_reported = pct - (pct % 10)
+                    self._progress_queue.put((i + 1, sectors, ""))
+
+        self._progress_queue.put((sectors, sectors, ""))
+
 
     def _run_process(self, args: List[str]):
         """Execute *args* via :class:`subprocess.run` and return (exit_code, stderr)."""
@@ -184,6 +267,7 @@ class ConverterWorker(QObject):
             return -1, "TIMEOUT"
         except Exception as exc:
             return -2, str(exc)
+
 
     def _run_process_with_progress(self, args: List[str]):
         """
@@ -272,8 +356,6 @@ class ConverterWorker(QObject):
             return self._progress_queue.get_nowait()
         except queue.Empty:
             return None
-
-
 
     # ------------------------------------------------------------------
     # Helpers
