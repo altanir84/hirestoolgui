@@ -10,25 +10,36 @@ Built with PySide6 and Python 3.10+.
 
 ## Features
 
+**File management**
 - **Recursive folder scanning** for `.dff`, `.DFF`, `.iso` and `.ISO` files
-- **Hierarchical tree view** with tri-state checkboxes for original file selection
+- **Hierarchical tree view** with tri-state checkboxes for file selection
+- **Multiple folder selection** — add several root folders at once via a checkable directory tree
+- **Drag-and-drop** folder support
+- **Remove Selected** via checkboxes — remove root folders by checking them and clicking Remove Selected
+
+**Conversion**
 - **Dual converter support:**
-  - `dff2dsf` — DFF → DSF conversion with automatic ID3 tag preservation
-  - `sacd_extract` — SACD ISO → files extraction with stereo, multi-channel, CUE sheet, and output format options
-- **Automatic ISO sector conversion** — detects and converts 2064-byte sector SACD-R images to 2048-byte on the fly
-- **Tag editor** — for DFF files missing minimum metadata, infers artist/album/track from folder structure with a review dialog before conversion
-- **Intelligent case normalisation** — detects when the majority of tracks in an album are UPPERCASE and normalises filenames, ID3 tags, and CUE sheet contents to Title Case, preserving intentional mixed-case words and acronyms
+  - `dff2dsf` — DFF → DSF conversion
+  - `sacd_extract` — SACD ISO → DSF/DSDIFF/ISO extraction with stereo, multi-channel, CUE sheet, and output format options
+- **CUE sheet auto-enable** — CUE sheet is forced on and locked when DSDIFF Edit Master is selected, as it is required for that format
 - **Two output modes:**
   - **Single root** — replicates `Artist/Album[/Disc]` folder structure under one directory
   - **Per folder** — creates a `converted/` subfolder next to each source file
-- **Per-track progress bar** during SACD extraction showing real-time track completion
-- **Multiple folder selection** — add several root folders at once via a checkable directory tree
-- **Persistent configuration** via QSettings — binary paths, output mode, last visited folder, SACD options
-- **Drag-and-drop** folder support
-- **Cancellable** batch conversion
+- **Automatic ISO sector conversion** — detects and converts 2064-byte sector SACD-R images to 2048-byte on the fly
+
 - **Path validation** with exportable rejection list
-- **Destination collision handling** — skip or overwrite existing files
 - **Pre-conversion summary dialog** showing file counts by type and destination folders
+- **Destination collision handling** — skip or overwrite existing files
+- **Per-track progress bar** during SACD extraction showing real-time track completion
+- **Cancellable** batch conversion
+
+**Tags and naming**
+- **ID3 tag preservation** — copies all existing tags from DFF to DSF; only missing fields are added when inferred
+- **Tag editor** — for DFF files missing minimum metadata, infers artist/album/track from folder structure with a review dialog before conversion
+- **Intelligent case normalisation** — when the majority of tracks in an album are UPPERCASE, normalises filenames, ID3 tags (DSF and DFF), and CUE sheet contents to Title Case, preserving intentional mixed-case words and acronyms
+
+**Interface**
+- **Persistent configuration** via QSettings — binary paths, output mode, last visited folder, SACD options
 - **Detailed log output** with success/failure summary, full log file path, and separate error log for non-processed files
 - **Dark mode** support via system theme detection
 

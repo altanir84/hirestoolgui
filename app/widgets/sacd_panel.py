@@ -3,6 +3,9 @@ SACD extraction options panel.
 
 Provides radio buttons for stereo/multi-channel selection, a CUE sheet
 checkbox, and a drop-down for output format.
+
+When DSDIFF Edit Master is selected the CUE sheet checkbox is forced
+on and disabled, as it is required for that format.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ class SacdPanel(QGroupBox):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("SACD Extraction Options", parent)
+        self._cue_was_checked = False
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -84,7 +88,9 @@ class SacdPanel(QGroupBox):
         self._radio_stereo.setToolTip("Extract stereo tracks")
 
         self._radio_multichannel = QRadioButton("Multi-channel (mch)")
-        self._radio_multichannel.setToolTip("Extract multi-channel tracks")
+        self._radio_multichannel.setToolTip(
+            "Extract multi-channel tracks"
+        )
 
         self._channel_group = QButtonGroup(self)
         self._channel_group.addButton(self._radio_stereo)
@@ -103,7 +109,9 @@ class SacdPanel(QGroupBox):
         # -- CUE sheet --
         self._chk_cue = QCheckBox("Export CUE sheet")
         self._chk_cue.setChecked(False)
-        self._chk_cue.setToolTip("Generate a CUE sheet describing the disc layout")
+        self._chk_cue.setToolTip(
+            "Generate a CUE sheet describing the disc layout"
+        )
         layout.addWidget(self._chk_cue)
 
         layout.addStretch()
@@ -111,16 +119,28 @@ class SacdPanel(QGroupBox):
         # Wire signals.
         self._radio_stereo.toggled.connect(
             lambda _checked: self.options_changed.emit()
-            )
+        )
         self._radio_multichannel.toggled.connect(
             lambda _checked: self.options_changed.emit()
-            )
+        )
         self._combo_format.currentIndexChanged.connect(
-            lambda _idx: self.options_changed.emit()
-            )
+            self._on_format_changed
+        )
         self._chk_cue.toggled.connect(
             lambda _checked: self.options_changed.emit()
-            )
+        )
 
+    # ------------------------------------------------------------------
+    # Slots
+    # ------------------------------------------------------------------
 
-
+    def _on_format_changed(self, _idx: int) -> None:
+        """Force CUE sheet on for Edit Master, restore on other formats."""
+        if self.output_format_flag() == "-e":
+            self._cue_was_checked = self._chk_cue.isChecked()
+            self._chk_cue.setChecked(True)
+            self._chk_cue.setEnabled(False)
+        else:
+            self._chk_cue.setEnabled(True)
+            self._chk_cue.setChecked(self._cue_was_checked)
+        self.options_changed.emit()
