@@ -2,8 +2,8 @@
 Post-processing utilities for HiResToolsGUI.
 
 Handles filename normalisation (UPPERCASE → Title Case), CUE-sheet
-title correction, and ID3 tag normalisation for DSF files after
-conversion.
+title correction, and ID3 tag normalisation for DSF and DFF files
+after conversion.
 
 Normalisation is applied only when the majority of tracks in an album
 are entirely uppercase — this preserves intentional mixed-case or
@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from mutagen.dsf import DSF
+from mutagen.dsdiff import DSDIFF
 from typing import List
 
 
@@ -43,7 +45,7 @@ class PostProcessor:
         *dest_dir*.
 
         Normalisation is only applied when the majority of ``.dsf``
-        stems in the directory are entirely uppercase.
+        and/or ``.dff`` stems in the directory are entirely uppercase.
         """
         if not cls._should_normalise(dest_dir):
             return
@@ -51,7 +53,7 @@ class PostProcessor:
         # Normalise filenames.
         for f in dest_dir.iterdir():
             if f.is_file() and f.suffix.lower() in (
-                ".dsf", ".cue", ".xml",
+                ".dsf", ".dff", ".cue", ".xml",
             ):
                 normalised = cls._normalise_filename(f)
                 if normalised != f:
@@ -60,10 +62,10 @@ class PostProcessor:
                     except OSError:
                         pass
 
-        # Normalise ID3 tags inside DSF files.
+        # Normalise ID3 tags inside audio files.
         for f in dest_dir.iterdir():
-            if f.is_file() and f.suffix.lower() == ".dsf":
-                cls._normalise_dsf_tags(f)
+            if f.is_file() and f.suffix.lower() in (".dsf", ".dff"):
+                cls._normalise_audio_tags(f)
 
         # Normalise CUE sheet contents.
         cue_files = list(dest_dir.glob("*.cue"))
@@ -89,12 +91,12 @@ class PostProcessor:
     @classmethod
     def _should_normalise(cls, dest_dir: Path) -> bool:
         """
-        Return ``True`` when the majority of ``.dsf`` stems in
-        *dest_dir* are entirely uppercase.
+        Return ``True`` when the majority of ``.dsf`` and ``.dff``
+        stems in *dest_dir* are entirely uppercase.
         """
         stems: List[str] = []
         for f in dest_dir.iterdir():
-            if f.is_file() and f.suffix.lower() == ".dsf":
+            if f.is_file() and f.suffix.lower() in (".dsf", ".dff"):
                 stems.append(f.stem)
 
         if not stems:
@@ -145,14 +147,20 @@ class PostProcessor:
         return path.with_name(stem + path.suffix)
 
     @classmethod
-    def _normalise_dsf_tags(cls, dsf_path: Path) -> None:
+    def _normalise_audio_tags(cls, audio_path: Path) -> None:
         """
-        Normalise UPPERCASE ID3 tag values in a DSF file word-by-word.
+        Normalise UPPERCASE ID3 tag values in a DSF or DFF file
+        word-by-word.
         """
         try:
-            from mutagen.dsf import DSF
+            suffix = audio_path.suffix.lower()
+            if suffix == ".dsf":
+                audio = DSF(str(audio_path))
+            elif suffix == ".dff":
+                audio = DSDIFF(str(audio_path))
+            else:
+                return
 
-            audio = DSF(str(dsf_path))
             if audio.tags is None:
                 return
 
@@ -228,5 +236,3 @@ class PostProcessor:
                 )
             except Exception:
                 pass
-
-
