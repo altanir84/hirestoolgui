@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from app.core.converter_worker import ConversionTask, ConverterWorker
+from app.core.post_processor import PostProcessor
 from app.core.tag_preserver import TagPreserver
 from app.utils.logger import ErrorLogManager, LogManager
 from app.widgets.progress_panel import ProgressPanel
@@ -101,6 +102,7 @@ class ConversionOrchestrator(QObject):
         self._threads: List[QThread] = []
         self._workers: List[ConverterWorker] = []
         self._task_map: Dict[str, str] = {}
+        self._announced_albums: set = set()
         self._completed_tasks = 0
         self._success_count = 0
         self._failed_count = 0
@@ -121,6 +123,7 @@ class ConversionOrchestrator(QObject):
         obtained user confirmation via dialogs.
         """
         self._task_map = {str(t.source): t.converter for t in tasks}
+        self._announced_albums.clear()
         self._completed_tasks = 0
         self._success_count = 0
         self._failed_count = 0
@@ -178,7 +181,28 @@ class ConversionOrchestrator(QObject):
 
     @Slot(str, str)
     def _on_task_started(self, source: str, dest: str) -> None:
-        self._log_manager.info(f"Converting: {Path(source).name}")
+        source_path = Path(source)
+        converter_type = self._task_map.get(source, "")
+
+        if not converter_type:
+            converter_type = (
+                "sacd_extract"
+                if source_path.suffix.lower() == ".iso"
+                else "dff2dsf"
+            )
+
+        if converter_type == "dff2dsf":
+            album_dir = str(source_path.parent)
+            if album_dir not in self._announced_albums:
+                self._announced_albums.add(album_dir)
+                self._log_manager.info(
+                    f"Album: {source_path.parent.name}"
+                )
+                self._progress_panel.append_log(
+                    self._log_manager.entries()[-1]
+                )
+
+        self._log_manager.info(f"Converting: {source_path.name}")
         self._progress_panel.append_log(self._log_manager.entries()[-1])
         self.task_started.emit(source, dest)
 
@@ -205,16 +229,51 @@ class ConversionOrchestrator(QObject):
                     self._log_manager.warning(
                         f"Could not preserve tags for: {Path(source).name}"
                     )
+                PostProcessor.process_dff_output(Path(dest))
 
             if converter_type == "sacd_extract":
                 dest_path = Path(dest)
                 dest_dir = dest_path.parent
+
+                # sacd_extract creates a subfolder named after the ISO
+                # inside dest_dir.  Move everything up, then remove it.
                 for subdir in dest_dir.iterdir():
                     if subdir.is_dir():
                         for f in subdir.iterdir():
-                            shutil.move(str(f), str(dest_dir / f.name))
+                            shutil.move(
+                                str(f), str(dest_dir / f.name)
+                            )
                         subdir.rmdir()
                         break
+
+                # Handle channel sub-folders created by sacd_extract.
+                # Stereo only: move contents up, remove folder.
+                # Multichannel only: move contents up, add -mch suffix
+                # to .dsf files and update CUE references.
+                channel_dirs = [
+                    d for d in dest_dir.iterdir()
+                    if d.is_dir()
+                    and d.name.lower() in (
+                        "stereo", "[stereo]", "6ch", "multi", "[multi]",
+                    )
+                ]
+                for channel_dir in channel_dirs:
+                    suffix = (
+                        "-mch"
+                        if self._sacd_multichannel
+                        and not self._sacd_stereo
+                        else ""
+                    )
+                    for f in channel_dir.iterdir():
+                        dest_name = f.name
+                        if suffix and f.suffix.lower() == ".dsf":
+                            dest_name = f.stem + suffix + f.suffix
+                        shutil.move(
+                            str(f), str(dest_dir / dest_name)
+                        )
+                    channel_dir.rmdir()
+
+                PostProcessor.process_sacd_output(dest_dir)
         else:
             self._failed_count += 1
             self._log_manager.error(
@@ -258,9 +317,9 @@ class ConversionOrchestrator(QObject):
             f"{self._failed_count} failed, "
             f"{self._total_tasks} total"
         )
-        self._log_manager.info(
-            f"Log file: {self._log_manager._log_dir}"
-        )
+        log_path = self._log_manager.log_file_path()
+        if log_path is not None:
+            self._log_manager.info(f"Log file: {log_path}")
 
         error_log_path = self._error_log.finalise()
         if error_log_path is not None:
@@ -310,3 +369,6 @@ class ConversionOrchestrator(QObject):
                         self._progress_panel.append_log(
                             self._log_manager.entries()[-1]
                         )
+
+
+
