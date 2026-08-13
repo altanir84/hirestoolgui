@@ -17,8 +17,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 
 from app.main_window import MainWindow
+from app.utils.resources import resource_path
 
 
 def main() -> None:
@@ -27,6 +29,7 @@ def main() -> None:
     app.setApplicationName("HiResToolsGUI")
     app.setOrganizationName("HiResToolsGUI")
     app.setApplicationVersion("1.0.0")
+    app.setWindowIcon(QIcon(str(resource_path("assets/hires_toolgui.svg"))))
 
     # Detect system dark-mode preference (Qt 6.5+).
     # Fall back to a dark palette on older versions.

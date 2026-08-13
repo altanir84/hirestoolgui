@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal, Slot, QSettings
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QStandardItem
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -20,15 +20,13 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
-    QDialogButtonBox,
     QTreeView,
     QWidget,
-    QDialog,
-    )
+)
 
 from app.core.file_scanner import FileScanner
 from app.models.file_tree_model import FileTreeModel
-from app.models.file_node import FileNode, CheckState
+from app.models.file_node import CheckState
 
 
 class FilePanel(QWidget):
@@ -53,6 +51,7 @@ class FilePanel(QWidget):
         self._model = FileTreeModel(self)
         self._warning_callback = None  # set by MainWindow
         self._root_folders: List[Path] = []
+        self.setAcceptDrops(True)
         self._build_ui()
         self._connect_signals()
 
@@ -109,9 +108,13 @@ class FilePanel(QWidget):
         toolbar = QHBoxLayout()
 
         self._btn_add = QPushButton("Add Folder...")
-        self._btn_add.setToolTip("Add a root folder to scan for .dff and .iso files")
+        self._btn_add.setToolTip(
+            "Add a root folder to scan for .dff and .iso files"
+        )
         self._btn_add_multiple = QPushButton("Add Multiple...")
-        self._btn_add_multiple.setToolTip("Add multiple folders to scan for .dff and .iso files")
+        self._btn_add_multiple.setToolTip(
+            "Add multiple folders to scan for .dff and .iso files"
+        )
 
         self._btn_remove = QPushButton("Remove Selected")
         self._btn_remove.setToolTip(
@@ -139,11 +142,6 @@ class FilePanel(QWidget):
         )
         self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.setDragEnabled(False)
-        self._tree.setAcceptDrops(True)
-        self._tree.setDropIndicatorShown(True)
-        self._tree.setDragDropMode(QAbstractItemView.DropOnly)
-        self._tree.dragEnterEvent = self._on_drag_enter
-        self._tree.dropEvent = self._on_drop
 
         # -- Status bar (totals left, selected right) --
         status_row = QHBoxLayout()
@@ -168,11 +166,15 @@ class FilePanel(QWidget):
 
     def _connect_signals(self) -> None:
         self._btn_add.clicked.connect(self._on_add_folder)
-        self._btn_add_multiple.clicked.connect(self._on_add_multiple_folders)
+        self._btn_add_multiple.clicked.connect(
+            self._on_add_multiple_folders
+        )
         self._btn_remove.clicked.connect(self._on_remove_folder)
         self._btn_select_all.clicked.connect(self._on_select_all)
         self._btn_deselect_all.clicked.connect(self._on_deselect_all)
-        self._model.checked_files_changed.connect(self._on_checked_changed)
+        self._model.checked_files_changed.connect(
+            self._on_checked_changed
+        )
 
     # ------------------------------------------------------------------
     # Slots
@@ -364,8 +366,12 @@ class FilePanel(QWidget):
     def _on_checked_changed(self) -> None:
         checked = self._model.checked_files()
         count = len(checked)
-        dff_count = sum(1 for f in checked if f.suffix.lower() == ".dff")
-        iso_count = sum(1 for f in checked if f.suffix.lower() == ".iso")
+        dff_count = sum(
+            1 for f in checked if f.suffix.lower() == ".dff"
+        )
+        iso_count = sum(
+            1 for f in checked if f.suffix.lower() == ".iso"
+        )
         parts = []
         if dff_count:
             parts.append(f"{dff_count} DFF")
@@ -377,14 +383,14 @@ class FilePanel(QWidget):
         self.selection_changed.emit(count)
 
     # ------------------------------------------------------------------
-    # Drag and drop
+    # Drag and drop (on the FilePanel widget itself)
     # ------------------------------------------------------------------
 
-    def _on_drag_enter(self, event: QDragEnterEvent) -> None:
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
-    def _on_drop(self, event: QDropEvent) -> None:
+    def dropEvent(self, event: QDropEvent) -> None:
         for url in event.mimeData().urls():
             path = Path(url.toLocalFile())
             if path.is_dir():
@@ -410,7 +416,9 @@ class FilePanel(QWidget):
             self._lbl_status.setText(
                 "No DFF or ISO files found in the selected folder(s)."
             )
-            self._lbl_status.setStyleSheet("color: #e74c3c; padding: 4px;")
+            self._lbl_status.setStyleSheet(
+                "color: #e74c3c; padding: 4px;"
+            )
         else:
             if iso_count > 0:
                 status = (
@@ -428,7 +436,6 @@ class FilePanel(QWidget):
         self._btn_remove.setEnabled(len(self._root_folders) > 0)
         self.scan_completed.emit(total)
 
-
     def _set_tree_state(self, checked: bool) -> None:
         """
         Recursively check or uncheck every item in the tree.
@@ -443,7 +450,9 @@ class FilePanel(QWidget):
         if root_node is not None:
             root_node.set_check_state(file_state)
 
-        qt_state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        qt_state = (
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        )
         root = self._model.invisibleRootItem()
 
         self._model._updating = True
