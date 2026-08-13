@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from PySide6.QtCore import QThread, Qt, Signal, Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -57,7 +56,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("HiResToolsGUI")
-        self.setMinimumSize(1200, 900)
+        self.resize(1200, 900)
 
         self._log_manager = LogManager()
         self._error_log = ErrorLogManager()
