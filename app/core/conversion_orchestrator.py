@@ -84,6 +84,8 @@ class ConversionOrchestrator(QObject):
         sacd_cue: bool = False,
         sacd_output_format: str = "-s",
         overwrite: bool = False,
+        keep_folder: bool = False,
+
     ) -> None:
         super().__init__()
         self._log_manager = log_manager
@@ -97,6 +99,7 @@ class ConversionOrchestrator(QObject):
         self._sacd_cue = sacd_cue
         self._sacd_output_format = sacd_output_format
         self._overwrite = overwrite
+        self._keep_folder = keep_folder
 
         self._cancel_event = threading.Event()
         self._threads: List[QThread] = []
@@ -237,14 +240,15 @@ class ConversionOrchestrator(QObject):
 
                 # sacd_extract creates a subfolder named after the ISO
                 # inside dest_dir.  Move everything up, then remove it.
-                for subdir in dest_dir.iterdir():
-                    if subdir.is_dir():
-                        for f in subdir.iterdir():
-                            shutil.move(
-                                str(f), str(dest_dir / f.name)
-                            )
-                        subdir.rmdir()
-                        break
+                if not self._keep_folder:
+                    for subdir in dest_dir.iterdir():
+                        if subdir.is_dir():
+                            for f in subdir.iterdir():
+                                shutil.move(
+                                    str(f), str(dest_dir / f.name)
+                                )
+                            subdir.rmdir()
+                            break
 
                 # Handle channel sub-folders created by sacd_extract.
                 # Stereo only: move contents up, remove folder.

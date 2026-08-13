@@ -2,7 +2,8 @@
 SACD extraction options panel.
 
 Provides radio buttons for stereo/multi-channel selection, a CUE sheet
-checkbox, and a drop-down for output format.
+checkbox, a drop-down for output format, and an option to keep the
+folder named after the ISO.
 
 When DSDIFF Edit Master is selected the CUE sheet checkbox is forced
 on and disabled, as it is required for that format.
@@ -68,6 +69,10 @@ class SacdPanel(QGroupBox):
         """``True`` when CUE sheet export is enabled."""
         return self._chk_cue.isChecked()
 
+    def keep_folder(self) -> bool:
+        """``True`` when the ISO-named folder should be preserved."""
+        return self._chk_keep_folder.isChecked()
+
     def output_format_flag(self) -> str:
         """Return the CLI flag for the selected output format."""
         label = self._combo_format.currentText()
@@ -114,6 +119,15 @@ class SacdPanel(QGroupBox):
         )
         layout.addWidget(self._chk_cue)
 
+        # -- Keep folder from ISO name --
+        self._chk_keep_folder = QCheckBox("Keep folder from ISO name")
+        self._chk_keep_folder.setChecked(False)
+        self._chk_keep_folder.setToolTip(
+            "Do not move files one level up after extraction; "
+            "keep the folder named after the ISO"
+        )
+        layout.addWidget(self._chk_keep_folder)
+
         layout.addStretch()
 
         # Wire signals.
@@ -127,6 +141,9 @@ class SacdPanel(QGroupBox):
             self._on_format_changed
         )
         self._chk_cue.toggled.connect(
+            lambda _checked: self.options_changed.emit()
+        )
+        self._chk_keep_folder.toggled.connect(
             lambda _checked: self.options_changed.emit()
         )
 

@@ -271,6 +271,7 @@ class MainWindow(QMainWindow):
     def _on_start(self) -> None:
         """Validate inputs, build tasks, confirm, and spawn orchestrator."""
         checked = self._file_panel.checked_files()
+        keep_folder=self._sacd_panel.keep_folder(),
         has_dff = any(f.suffix.lower() == ".dff" for f in checked)
         has_iso = any(f.suffix.lower() == ".iso" for f in checked)
 

@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QSettings
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QStandardItem
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QVBoxLayout,
     QHeaderView,
@@ -116,6 +117,9 @@ class FilePanel(QWidget):
             "Add multiple folders to scan for .dff and .iso files"
         )
 
+        self._btn_refresh = QPushButton("Refresh")
+        self._btn_refresh.setToolTip("Re-scan all imported folders")
+
         self._btn_remove = QPushButton("Remove Selected")
         self._btn_remove.setToolTip(
             "Remove the selected root folder and its subtree"
@@ -127,6 +131,7 @@ class FilePanel(QWidget):
 
         toolbar.addWidget(self._btn_add)
         toolbar.addWidget(self._btn_add_multiple)
+        toolbar.addWidget(self._btn_refresh)
         toolbar.addWidget(self._btn_remove)
         toolbar.addStretch()
         toolbar.addWidget(self._btn_select_all)
@@ -142,6 +147,10 @@ class FilePanel(QWidget):
         )
         self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.setDragEnabled(False)
+        self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(
+            self._on_context_menu
+        )
 
         # -- Status bar (totals left, selected right) --
         status_row = QHBoxLayout()
@@ -169,6 +178,7 @@ class FilePanel(QWidget):
         self._btn_add_multiple.clicked.connect(
             self._on_add_multiple_folders
         )
+        self._btn_refresh.clicked.connect(self._rescan)
         self._btn_remove.clicked.connect(self._on_remove_folder)
         self._btn_select_all.clicked.connect(self._on_select_all)
         self._btn_deselect_all.clicked.connect(self._on_deselect_all)
@@ -383,6 +393,34 @@ class FilePanel(QWidget):
         self.selection_changed.emit(count)
 
     # ------------------------------------------------------------------
+    # Context menu
+    # ------------------------------------------------------------------
+
+    def _on_context_menu(self, pos) -> None:
+        """Show a context menu for the tree view."""
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Refresh", self._rescan)
+        menu.addAction("Expand All", self._tree.expandAll)
+        menu.addAction("Collapse All", self._tree.collapseAll)
+        menu.addSeparator()
+        menu.addAction("Clear All", self._clear_all)
+        menu.exec(self._tree.viewport().mapToGlobal(pos))
+
+    def _clear_all(self) -> None:
+        """Remove all root folders and clear the tree."""
+        self._root_folders.clear()
+        empty_root = FileScanner([], self._warning_callback).scan()
+        self._model.set_root_node(empty_root)
+        self._lbl_status.setText("No folders added yet.")
+        self._lbl_status.setStyleSheet("color: #888; padding: 4px;")
+        self._lbl_selected.setText("")
+        self._btn_remove.setEnabled(False)
+        self.scan_completed.emit(0)
+        self._on_checked_changed()
+
+    # ------------------------------------------------------------------
     # Drag and drop (on the FilePanel widget itself)
     # ------------------------------------------------------------------
 
@@ -403,10 +441,17 @@ class FilePanel(QWidget):
 
     def _rescan(self) -> None:
         """Re-run the scanner and refresh the model."""
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._lbl_status.setText("Scanning...")
+        self._lbl_status.setStyleSheet("color: #f39c12; padding: 4px;")
+        QApplication.processEvents()
+
         scanner = FileScanner(self._root_folders, self._warning_callback)
         new_root = scanner.scan()
         self._model.set_root_node(new_root)
         self._tree.expandAll()
+
+        QApplication.restoreOverrideCursor()
 
         total_dff = new_root.total_dff_count
         iso_count = new_root.total_iso_count
@@ -435,6 +480,7 @@ class FilePanel(QWidget):
 
         self._btn_remove.setEnabled(len(self._root_folders) > 0)
         self.scan_completed.emit(total)
+        self._on_checked_changed()
 
     def _set_tree_state(self, checked: bool) -> None:
         """
@@ -476,6 +522,3 @@ class FilePanel(QWidget):
             return True
         except ValueError:
             return False
-
-
-
