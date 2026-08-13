@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=HiResToolsGUI
+Comment=Convert SACD ISO to hi res audio files and DFF files to DSF
+Exec=HiResToolsGUI
+Icon=hirestoolsgui
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true
