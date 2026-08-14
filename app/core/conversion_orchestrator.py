@@ -240,7 +240,7 @@ class ConversionOrchestrator(QObject):
                 dest_dir = dest_path.parent
 
                 # sacd_extract creates a subfolder named after the ISO
-                # inside dest_dir.  Move everything up, then remove it.
+                # inside dest_dir. Move everything up, then remove it.
                 if not self._keep_folder:
                     for subdir in dest_dir.iterdir():
                         if subdir.is_dir():
@@ -254,7 +254,7 @@ class ConversionOrchestrator(QObject):
                 # Handle channel sub-folders created by sacd_extract.
                 # Stereo only: move contents up, remove folder.
                 # Multichannel only: move contents up, add -mch suffix
-                # to .dsf files and update CUE references.
+                # to .dsf/.dff files and update CUE references.
                 channel_dirs = [
                     d for d in dest_dir.iterdir()
                     if d.is_dir()
@@ -262,13 +262,19 @@ class ConversionOrchestrator(QObject):
                         "stereo", "[stereo]", "6ch", "multi", "[multi]",
                     )
                 ]
+
+                has_multichannel_dir = any(
+                    d.name.lower() in ("6ch", "multi", "[multi]")
+                    for d in channel_dirs
+                )
+
                 for channel_dir in channel_dirs:
                     suffix = (
                         "-mch"
                         if self._sacd_multichannel
                         and not self._sacd_stereo
                         else ""
-                    ) 
+                    )
                     for f in channel_dir.iterdir():
                         dest_name = f.name
                         if suffix and f.suffix.lower() in (".dsf", ".dff"):
@@ -277,6 +283,23 @@ class ConversionOrchestrator(QObject):
                             str(f), str(dest_dir / dest_name)
                         )
                     channel_dir.rmdir()
+
+                # Warn if multichannel was requested but no
+                # multichannel directory was produced by sacd_extract.
+                if (
+                    self._sacd_multichannel
+                    and not has_multichannel_dir
+                ):
+                    self._log_manager.warning(
+                        f"No multichannel tracks found in: "
+                        f"{Path(source).name}"
+                    )
+                    self._failed_count += 1
+                    self._success_count -= 1
+                    self._error_log.add_failure(
+                        source, "ISO", -3,
+                        "ISO does not contain multichannel audio",
+                    )
 
                 PostProcessor.process_sacd_output(dest_dir)
         else:

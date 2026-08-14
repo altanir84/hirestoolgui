@@ -390,9 +390,10 @@ class MainWindow(QMainWindow):
         if self._orchestrator is not None:
             self._orchestrator.cancel()
         self._progress_panel._btn_cancel.setEnabled(False)
-        self._log_manager.warning("Cancellation requested — finishing current file...")
+        self._log_manager.warning(
+            "Cancellation requested — finishing current file..."
+        )
         self._progress_panel.append_log(self._log_manager.entries()[-1])
-
 
     @Slot(int, int, int)
     def _on_batch_finished(
@@ -406,6 +407,12 @@ class MainWindow(QMainWindow):
         self._file_panel.setEnabled(True)
         self._output_panel.setEnabled(True)
         self._config_panel.setEnabled(True)
+
+        # Re-evaluate SACD panel state based on current selection.
+        checked = self._file_panel.checked_files()
+        has_iso = any(f.suffix.lower() == ".iso" for f in checked)
+        self._sacd_panel.setEnabled(has_iso)
+
         self._update_start_button()
 
     # ------------------------------------------------------------------
