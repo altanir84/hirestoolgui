@@ -380,6 +380,7 @@ class MainWindow(QMainWindow):
         self._output_panel.setEnabled(False)
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
+        self._progress_panel._btn_cancel.setEnabled(True)  # DEBUG
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -413,11 +414,11 @@ class MainWindow(QMainWindow):
 
         if self._orchestrator is not None:
             self._orchestrator.cancel()
-        self._progress_panel._btn_cancel.setEnabled(False)
-        self._log_manager.warning(
+            self._progress_panel._btn_cancel.setEnabled(False)
+            self._log_manager.warning(
             "Cancellation requested — finishing current file..."
-        )
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
+            )
+            self._progress_panel.append_log(self._log_manager.entries()[-1])
 
     @Slot(int, int, int)
     def _on_batch_finished(

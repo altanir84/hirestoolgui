@@ -61,7 +61,7 @@ class ProgressPanel(QWidget):
         """Reset progress bars and enable the Cancel button."""
         self._bar_overall.setValue(0)
         self._lbl_overall.setText("Ready")
-        self._btn_cancel.setEnabled(True)
+        # self._btn_cancel.setEnabled(False)  # DEBUG
         self._log_view.clear()
         self._log_manager.clear()
 
@@ -126,6 +126,7 @@ class ProgressPanel(QWidget):
 
 
         self._btn_cancel = QPushButton("Cancel")
+        self._btn_cancel.setEnabled(False)
         self._btn_cancel.setFixedWidth(80)
         self._btn_cancel.clicked.connect(self.cancel_requested.emit)
 
