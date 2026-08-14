@@ -402,10 +402,13 @@ class FilePanel(QWidget):
 
         menu = QMenu(self)
         menu.addAction("Refresh", self._rescan)
-        menu.addAction("Expand All", self._tree.expandAll)
-        menu.addAction("Collapse All", self._tree.collapseAll)
-        menu.addSeparator()
-        menu.addAction("Clear All", self._clear_all)
+        
+        if self.has_files():
+            menu.addAction("Expand All", self._tree.expandAll)
+            menu.addAction("Collapse All", self._tree.collapseAll)
+            menu.addSeparator()
+            menu.addAction("Clear All", self._clear_all)
+
         menu.exec(self._tree.viewport().mapToGlobal(pos))
 
     def _clear_all(self) -> None:

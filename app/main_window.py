@@ -376,6 +376,7 @@ class MainWindow(QMainWindow):
             sacd_cue=self._sacd_panel.cue_sheet(),
             sacd_output_format=self._sacd_panel.output_format_flag(),
             overwrite=overwrite,
+            keep_folder=self._sacd_panel.keep_folder(),
         )
         self._orchestrator.finished.connect(self._on_batch_finished)
         self._orchestrator.start(tasks)

@@ -182,13 +182,18 @@ class TaskBuilder:
         """
         Extract a disc number from an ISO filename.
 
-        Looks for patterns like ``SACD8``, ``Disc 9``, ``CD10``, etc.
-        Returns the number as an int, or ``None`` if not found.
+        Looks for patterns like ``SACD8``, ``Disc 9``, ``D1``, ``CD10``,
+        or a trailing number like ``album1``.
         """
         match = re.search(
-            r"(?:sacd|disc|disco|disk|cd)\s*(\d+)",
+            r"(?:sacd|disc|disco|disk|cd|d)\s*(\d+)",
             filename, re.IGNORECASE,
         )
         if match:
             return int(match.group(1))
+        # Fallback: any trailing number.
+        match = re.search(r"(\d+)\s*$", filename)
+        if match:
+            return int(match.group(1))
         return None
+
