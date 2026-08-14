@@ -268,10 +268,10 @@ class ConversionOrchestrator(QObject):
                         if self._sacd_multichannel
                         and not self._sacd_stereo
                         else ""
-                    )
+                    ) 
                     for f in channel_dir.iterdir():
                         dest_name = f.name
-                        if suffix and f.suffix.lower() == ".dsf":
+                        if suffix and f.suffix.lower() in (".dsf", ".dff"):
                             dest_name = f.stem + suffix + f.suffix
                         shutil.move(
                             str(f), str(dest_dir / dest_name)
