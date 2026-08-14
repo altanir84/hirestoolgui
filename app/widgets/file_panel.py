@@ -23,9 +23,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTreeView,
     QWidget,
+    QSizePolicy,
 )
 
 from app.core.file_scanner import FileScanner
+from app.core.structure_analyzer import StructureAnalyzer
 from app.models.file_tree_model import FileTreeModel
 from app.models.file_node import CheckState
 
@@ -157,6 +159,10 @@ class FilePanel(QWidget):
 
         self._lbl_status = QLabel("No folders added yet.")
         self._lbl_status.setStyleSheet("color: #888; padding: 4px;")
+        self._lbl_status.setSizePolicy(
+            QSizePolicy.Ignored, QSizePolicy.Preferred
+        )
+        self._lbl_status.setMinimumWidth(0)
 
         self._lbl_selected = QLabel("")
         self._lbl_selected.setStyleSheet("color: #888; padding: 4px;")
@@ -449,7 +455,11 @@ class FilePanel(QWidget):
         self._lbl_status.setStyleSheet("color: #f39c12; padding: 4px;")
         QApplication.processEvents()
 
-        scanner = FileScanner(self._root_folders, self._warning_callback)
+        scanner = FileScanner(
+            self._root_folders,
+            self._warning_callback,
+            progress_callback=self._on_scan_progress,
+            )
         new_root = scanner.scan()
         self._model.set_root_node(new_root)
         self._tree.expandAll()
@@ -525,3 +535,13 @@ class FilePanel(QWidget):
             return True
         except ValueError:
             return False
+
+    def _on_scan_progress(self, directory: Path) -> None:
+        """Update status label with the path relative to the root folder."""
+        
+        display = StructureAnalyzer.relative_path(
+            directory, self._root_folders
+        )
+        self._lbl_status.setText(f"Scanning... {display}/")
+        QApplication.processEvents()
+

@@ -35,9 +35,12 @@ class FileScanner:
         self,
         roots: List[Path],
         warning_callback: Optional[callable] = None,
+        progress_callback: Optional[callable] = None,
     ) -> None:
         self._roots = roots
         self._warning = warning_callback or (lambda _: None)
+        self._progress = progress_callback
+
 
     # ------------------------------------------------------------------
     # Public API
@@ -71,6 +74,14 @@ class FileScanner:
         )
         return root_node
 
+    def set_progress_callback(self, callback: callable) -> None:
+        """
+        Register a callable ``(directory: Path) -> None`` that will be
+        invoked for every directory visited during the scan.
+        """
+        self._progress = callback
+
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -90,6 +101,9 @@ class FileScanner:
         except OSError as exc:
             self._warning(f"Cannot read {directory}: {exc}")
             return None
+
+        if self._progress is not None:
+            self._progress(directory)
 
         dir_node = FileNode(directory.name, directory, NodeType.DIRECTORY)
         file_count = 0

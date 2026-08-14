@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 ## Installation
 ```bash
-git clone https://github.com/altanir84/hirestoolgui.git
+git clone https://github.com/altanir84/hirestoolsgui.git
 cd hirestoolgui
 python3 -m venv .venv
 source .venv/bin/activate
@@ -96,7 +96,7 @@ python3 main.py
 ## Project Structure
 
 ```text
-hirestoolgui/
+hirestoolsgui/
 ├── main.py                         # Application entry point
 ├── requirements.txt                # Python dependencies
 └── app/
