@@ -259,15 +259,26 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_scan_started(self) -> None:
-        """Enable the Cancel button when a scan begins."""
+        """Enable Cancel button, show wait cursor, disable panels."""
         self._progress_panel._btn_cancel.setEnabled(True)
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._file_panel.setEnabled(False)
+        self._output_panel.setEnabled(False)
+        self._sacd_panel.setEnabled(False)
+
 
     @Slot()
     def _on_scan_finished(self) -> None:
-        """Disable the Cancel button when a scan ends."""
+        """Disable Cancel button, restore cursor, re-enable panels."""
         self._progress_panel._btn_cancel.setEnabled(False)
         QApplication.restoreOverrideCursor()
+        self._file_panel.setEnabled(True)
+        self._output_panel.setEnabled(True)
+        # SACD panel state depends on current selection.
+        checked = self._file_panel.checked_files()
+        has_iso = any(f.suffix.lower() == ".iso" for f in checked)
+        self._sacd_panel.setEnabled(has_iso)
+
 
     @Slot()
     def _update_start_button(self, _unused: int = 0) -> None:
