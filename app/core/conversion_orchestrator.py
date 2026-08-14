@@ -11,7 +11,7 @@ import re
 import shutil
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 

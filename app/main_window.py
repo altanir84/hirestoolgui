@@ -140,23 +140,20 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Connect all child-widget signals to MainWindow slots."""
-        self._config_panel.dff2dsf_changed.connect(
-            self._on_binary_changed
-        )
-        self._config_panel.sacd_extract_changed.connect(
-            self._on_binary_changed
-        )
+        self._config_panel.dff2dsf_changed.connect(self._on_binary_changed)
+        self._config_panel.sacd_extract_changed.connect(self._on_binary_changed)
+
         self._output_panel.mode_changed.connect(self._on_mode_changed)
-        self._file_panel.scan_completed.connect(
-            self._update_start_button
-        )
-        self._file_panel.selection_changed.connect(
-            self._on_selection_changed
-        )
-        self._sacd_panel.options_changed.connect(
-            self._update_start_button
-        )
+
+        self._file_panel.scan_started.connect(self._on_scan_started)
+        self._file_panel.scan_finished.connect(self._on_scan_finished)
+        self._file_panel.scan_completed.connect(self._update_start_button)
+        self._file_panel.selection_changed.connect(self._on_selection_changed)
+
+        self._sacd_panel.options_changed.connect(self._update_start_button)
+
         self._btn_start.clicked.connect(self._on_start)
+
         self._progress_panel.cancel_requested.connect(self._on_cancel)
 
     # ------------------------------------------------------------------
@@ -261,6 +258,29 @@ class MainWindow(QMainWindow):
             )
 
     @Slot()
+    def _on_scan_started(self) -> None:
+        """Enable Cancel button, show wait cursor, disable panels."""
+        self._progress_panel._btn_cancel.setEnabled(True)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._file_panel.setEnabled(False)
+        self._output_panel.setEnabled(False)
+        self._sacd_panel.setEnabled(False)
+
+
+    @Slot()
+    def _on_scan_finished(self) -> None:
+        """Disable Cancel button, restore cursor, re-enable panels."""
+        self._progress_panel._btn_cancel.setEnabled(False)
+        QApplication.restoreOverrideCursor()
+        self._file_panel.setEnabled(True)
+        self._output_panel.setEnabled(True)
+        # SACD panel state depends on current selection.
+        checked = self._file_panel.checked_files()
+        has_iso = any(f.suffix.lower() == ".iso" for f in checked)
+        self._sacd_panel.setEnabled(has_iso)
+
+
+    @Slot()
     def _update_start_button(self, _unused: int = 0) -> None:
         """Enable or disable the Start button based on current state."""
         self._btn_start.setEnabled(self._can_start())
@@ -360,6 +380,7 @@ class MainWindow(QMainWindow):
         self._output_panel.setEnabled(False)
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
+        self._progress_panel._btn_cancel.setEnabled(True)  # DEBUG
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -386,14 +407,18 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_cancel(self) -> None:
-        """Request graceful cancellation."""
+        """Request graceful cancellation of scan or conversion."""
+        if self._file_panel.is_scanning():
+            self._file_panel.cancel_scan()
+            return
+
         if self._orchestrator is not None:
             self._orchestrator.cancel()
-        self._progress_panel._btn_cancel.setEnabled(False)
-        self._log_manager.warning(
+            self._progress_panel._btn_cancel.setEnabled(False)
+            self._log_manager.warning(
             "Cancellation requested — finishing current file..."
-        )
-        self._progress_panel.append_log(self._log_manager.entries()[-1])
+            )
+            self._progress_panel.append_log(self._log_manager.entries()[-1])
 
     @Slot(int, int, int)
     def _on_batch_finished(

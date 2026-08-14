@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List, Optional
 
-from PySide6.QtCore import QModelIndex, Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 
 from app.models.file_node import CheckState, FileNode, NodeType
