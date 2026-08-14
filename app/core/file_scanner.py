@@ -8,8 +8,9 @@ The resulting tree is ready to be consumed by :class:`FileTreeModel`.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from app.models.file_node import FileNode, NodeType, CheckState
 
@@ -23,12 +24,23 @@ class FileScanner:
     Parameters
     ----------
     roots:
-        List of absolute paths to scan.  Non-existent paths are skipped
+        List of absolute paths to scan. Non-existent paths are skipped
         with a warning emitted via *warning_callback*.
     warning_callback:
         Optional callable ``(message: str) -> None`` invoked for every
         non-fatal issue encountered (e.g. permission errors, broken
         symlinks).
+    progress_callback:
+        Optional callable ``(directory: Path) -> None`` invoked for
+        every directory visited during the scan.
+    cancel_event:
+        Optional :class:`threading.Event` used to signal cancellation.
+        When set, the scan stops at the next directory boundary and
+        returns the partial tree collected so far.
+    exclude_folders:
+        Optional set of absolute paths to skip during the scan.
+        Useful for refresh operations where only a subset of folders
+        should be re-scanned.
     """
 
     def __init__(
@@ -36,11 +48,14 @@ class FileScanner:
         roots: List[Path],
         warning_callback: Optional[callable] = None,
         progress_callback: Optional[callable] = None,
+        cancel_event: Optional[threading.Event] = None,
+        exclude_folders: Optional[Set[Path]] = None,
     ) -> None:
         self._roots = roots
         self._warning = warning_callback or (lambda _: None)
         self._progress = progress_callback
-
+        self._cancel_event = cancel_event
+        self._exclude_folders = exclude_folders or set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -52,10 +67,15 @@ class FileScanner:
 
         The returned node is a virtual ROOT whose children are the
         top-level directories supplied to the constructor.
+
+        If *cancel_event* is set during the scan, the partial tree
+        collected up to that point is returned.
         """
         root_node = FileNode("root", Path("."), NodeType.ROOT)
 
         for folder in self._roots:
+            if self._is_cancelled():
+                break
             if not folder.is_dir():
                 self._warning(f"Skipping non-existent folder: {folder}")
                 continue
@@ -81,18 +101,37 @@ class FileScanner:
         """
         self._progress = callback
 
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _is_cancelled(self) -> bool:
+        """Return ``True`` when a cancel event has been set."""
+        return (
+            self._cancel_event is not None
+            and self._cancel_event.is_set()
+        )
+
+    def _is_excluded(self, directory: Path) -> bool:
+        """Return ``True`` when *directory* should be skipped."""
+        return directory in self._exclude_folders
 
     def _walk(self, directory: Path) -> Optional[FileNode]:
         """
         Recursively scan *directory*, returning a :class:`FileNode`.
 
-        Returns ``None`` if the directory is inaccessible or contains no
-        DFF or ISO files (empty subtrees are pruned).
+        Returns ``None`` if the directory is inaccessible, excluded,
+        or contains no DFF or ISO files (empty subtrees are pruned).
+
+        Checks the cancel event before processing each directory so
+        that cancellation is responsive without leaving partial state.
         """
+        if self._is_cancelled():
+            return None
+
+        if self._is_excluded(directory):
+            return None
+
         try:
             entries = sorted(
                 directory.iterdir(),
@@ -109,6 +148,9 @@ class FileScanner:
         file_count = 0
 
         for entry in entries:
+            if self._is_cancelled():
+                break
+
             if entry.is_symlink():
                 try:
                     target = entry.resolve(strict=True)
@@ -170,12 +212,10 @@ class FileScanner:
 
         return dir_node
 
-
     @staticmethod
     def _is_dff(path: Path) -> bool:
         """Return ``True`` if *path* has a ``.dff`` / ``.DFF`` suffix."""
         return path.suffix.lower() == ".dff"
-
 
     @staticmethod
     def _is_iso(path: Path) -> bool:

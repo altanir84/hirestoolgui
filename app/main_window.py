@@ -140,23 +140,20 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Connect all child-widget signals to MainWindow slots."""
-        self._config_panel.dff2dsf_changed.connect(
-            self._on_binary_changed
-        )
-        self._config_panel.sacd_extract_changed.connect(
-            self._on_binary_changed
-        )
+        self._config_panel.dff2dsf_changed.connect(self._on_binary_changed)
+        self._config_panel.sacd_extract_changed.connect(self._on_binary_changed)
+
         self._output_panel.mode_changed.connect(self._on_mode_changed)
-        self._file_panel.scan_completed.connect(
-            self._update_start_button
-        )
-        self._file_panel.selection_changed.connect(
-            self._on_selection_changed
-        )
-        self._sacd_panel.options_changed.connect(
-            self._update_start_button
-        )
+
+        self._file_panel.scan_started.connect(self._on_scan_started)
+        self._file_panel.scan_finished.connect(self._on_scan_finished)
+        self._file_panel.scan_completed.connect(self._update_start_button)
+        self._file_panel.selection_changed.connect(self._on_selection_changed)
+
+        self._sacd_panel.options_changed.connect(self._update_start_button)
+
         self._btn_start.clicked.connect(self._on_start)
+
         self._progress_panel.cancel_requested.connect(self._on_cancel)
 
     # ------------------------------------------------------------------
@@ -259,6 +256,18 @@ class MainWindow(QMainWindow):
             self._config_panel.set_sacd_extract_status(
                 False, "sacd_extract binary not found or not executable"
             )
+
+    @Slot()
+    def _on_scan_started(self) -> None:
+        """Enable the Cancel button when a scan begins."""
+        self._progress_panel._btn_cancel.setEnabled(True)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+    @Slot()
+    def _on_scan_finished(self) -> None:
+        """Disable the Cancel button when a scan ends."""
+        self._progress_panel._btn_cancel.setEnabled(False)
+        QApplication.restoreOverrideCursor()
 
     @Slot()
     def _update_start_button(self, _unused: int = 0) -> None:
@@ -386,7 +395,11 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_cancel(self) -> None:
-        """Request graceful cancellation."""
+        """Request graceful cancellation of scan or conversion."""
+        if self._file_panel.is_scanning():
+            self._file_panel.cancel_scan()
+            return
+
         if self._orchestrator is not None:
             self._orchestrator.cancel()
         self._progress_panel._btn_cancel.setEnabled(False)
