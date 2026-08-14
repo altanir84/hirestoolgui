@@ -38,10 +38,10 @@ class ProgressPanel(QWidget):
 
     # Colour map for log levels.
     _LEVEL_COLORS = {
-        "INFO":     QColor("#bdc3c7"),
-        "WARNING":  QColor("#f39c12"),
-        "ERROR":    QColor("#e74c3c"),
-        "SUCCESS":  QColor("#2ecc71"),
+        "INFO": QColor("#bdc3c7"),
+        "WARNING": QColor("#f39c12"),
+        "ERROR": QColor("#e74c3c"),
+        "SUCCESS": QColor("#2ecc71"),
     }
 
     def __init__(
@@ -145,5 +145,4 @@ class ProgressPanel(QWidget):
 
         layout.addLayout(progress_layout)
         layout.addWidget(self._log_view, 1)
-
 
