@@ -34,6 +34,9 @@ class PostProcessor:
     #: is considered to be in need of normalisation.
     _UPPERCASE_THRESHOLD = 0.5
 
+    #: Suffix appended to multi-channel files during extraction.
+    _MCH_SUFFIX = "-mch"
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -47,6 +50,8 @@ class PostProcessor:
         Normalisation is only applied when the majority of ``.dsf``
         and/or ``.dff`` stems in the directory are entirely uppercase.
         """
+        cls._fix_cue_mch_references(dest_dir)
+
         if not cls._should_normalise(dest_dir):
             return
 
@@ -85,6 +90,75 @@ class PostProcessor:
                 pass
 
     # ------------------------------------------------------------------
+    # CUE -mch reference fix
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _fix_cue_mch_references(cls, dest_dir: Path) -> None:
+        """
+        Update ``FILE`` references in CUE sheets to include the
+        ``-mch`` suffix when the corresponding audio file on disk has
+        been renamed with that suffix during multi-channel extraction.
+
+        Parameters
+        ----------
+        dest_dir:
+            Directory containing the extracted audio files and CUE
+            sheets.
+        """
+        cue_files = list(dest_dir.glob("*.cue"))
+        if not cue_files:
+            return
+
+        for cue_file in cue_files:
+            try:
+                text = cue_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            lines = text.splitlines()
+            changed = False
+            new_lines: List[str] = []
+
+            for line in lines:
+                stripped = line.strip()
+                upper = stripped.upper()
+
+                if not upper.startswith("FILE "):
+                    new_lines.append(line)
+                    continue
+
+                start = stripped.find('"')
+                end = stripped.rfind('"')
+                if start == -1 or end == -1 or start >= end:
+                    new_lines.append(line)
+                    continue
+
+                original_name = stripped[start + 1:end]
+                original_path = dest_dir / original_name
+
+                stem = Path(original_name).stem
+                suffix = Path(original_name).suffix
+                mch_name = f"{stem},{cls._MCH_SUFFIX},{suffix}"
+                mch_path = dest_dir / mch_name
+
+                if mch_path.exists() and not original_path.exists():
+                    line = line.replace(
+                        f'"{original_name}"', f'"{mch_name}"'
+                    )
+                    changed = True
+
+                new_lines.append(line)
+
+            if changed:
+                try:
+                    cue_file.write_text(
+                        "\n".join(new_lines), encoding="utf-8"
+                    )
+                except Exception:
+                    pass
+
+    # ------------------------------------------------------------------
     # Majority detection
     # ------------------------------------------------------------------
 
@@ -93,11 +167,17 @@ class PostProcessor:
         """
         Return ``True`` when the majority of ``.dsf`` and ``.dff``
         stems in *dest_dir* are entirely uppercase.
+
+        The ``-mch`` suffix is stripped from stems before evaluation
+        so that multi-channel files do not skew the case detection.
         """
         stems: List[str] = []
         for f in dest_dir.iterdir():
             if f.is_file() and f.suffix.lower() in (".dsf", ".dff"):
-                stems.append(f.stem)
+                stem = f.stem
+                if stem.endswith(cls._MCH_SUFFIX):
+                    stem = stem[:-len(cls._MCH_SUFFIX)]
+                stems.append(stem)
 
         if not stems:
             return False
@@ -236,3 +316,6 @@ class PostProcessor:
                 )
             except Exception:
                 pass
+
+
+

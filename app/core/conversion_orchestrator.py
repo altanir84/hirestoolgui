@@ -84,6 +84,9 @@ class ConversionOrchestrator(QObject):
         sacd_cue: bool = False,
         sacd_output_format: str = "-s",
         overwrite: bool = False,
+        keep_folder: bool = False,
+
+
     ) -> None:
         super().__init__()
         self._log_manager = log_manager
@@ -97,6 +100,7 @@ class ConversionOrchestrator(QObject):
         self._sacd_cue = sacd_cue
         self._sacd_output_format = sacd_output_format
         self._overwrite = overwrite
+        self._keep_folder = keep_folder
 
         self._cancel_event = threading.Event()
         self._threads: List[QThread] = []
@@ -236,20 +240,21 @@ class ConversionOrchestrator(QObject):
                 dest_dir = dest_path.parent
 
                 # sacd_extract creates a subfolder named after the ISO
-                # inside dest_dir.  Move everything up, then remove it.
-                for subdir in dest_dir.iterdir():
-                    if subdir.is_dir():
-                        for f in subdir.iterdir():
-                            shutil.move(
-                                str(f), str(dest_dir / f.name)
-                            )
-                        subdir.rmdir()
-                        break
+                # inside dest_dir. Move everything up, then remove it.
+                if not self._keep_folder:
+                    for subdir in dest_dir.iterdir():
+                        if subdir.is_dir():
+                            for f in subdir.iterdir():
+                                shutil.move(
+                                    str(f), str(dest_dir / f.name)
+                                )
+                            subdir.rmdir()
+                            break
 
                 # Handle channel sub-folders created by sacd_extract.
                 # Stereo only: move contents up, remove folder.
                 # Multichannel only: move contents up, add -mch suffix
-                # to .dsf files and update CUE references.
+                # to .dsf/.dff files and update CUE references.
                 channel_dirs = [
                     d for d in dest_dir.iterdir()
                     if d.is_dir()
@@ -257,6 +262,12 @@ class ConversionOrchestrator(QObject):
                         "stereo", "[stereo]", "6ch", "multi", "[multi]",
                     )
                 ]
+
+                has_multichannel_dir = any(
+                    d.name.lower() in ("6ch", "multi", "[multi]")
+                    for d in channel_dirs
+                )
+
                 for channel_dir in channel_dirs:
                     suffix = (
                         "-mch"
@@ -266,12 +277,29 @@ class ConversionOrchestrator(QObject):
                     )
                     for f in channel_dir.iterdir():
                         dest_name = f.name
-                        if suffix and f.suffix.lower() == ".dsf":
+                        if suffix and f.suffix.lower() in (".dsf", ".dff"):
                             dest_name = f.stem + suffix + f.suffix
                         shutil.move(
                             str(f), str(dest_dir / dest_name)
                         )
                     channel_dir.rmdir()
+
+                # Warn if multichannel was requested but no
+                # multichannel directory was produced by sacd_extract.
+                if (
+                    self._sacd_multichannel
+                    and not has_multichannel_dir
+                ):
+                    self._log_manager.warning(
+                        f"No multichannel tracks found in: "
+                        f"{Path(source).name}"
+                    )
+                    self._failed_count += 1
+                    self._success_count -= 1
+                    self._error_log.add_failure(
+                        source, "ISO", -3,
+                        "ISO does not contain multichannel audio",
+                    )
 
                 PostProcessor.process_sacd_output(dest_dir)
         else:

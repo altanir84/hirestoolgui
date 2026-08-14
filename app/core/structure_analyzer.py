@@ -161,4 +161,20 @@ class StructureAnalyzer:
             return text.title()
         return text
 
+    @staticmethod
+    def relative_path(file_path: Path, roots: List[Path]) -> str:
+        """
+        Return *file_path* relative to the first matching root in *roots*.
+
+        Falls back to the file name if no root matches.
+        """
+        for root in roots:
+            try:
+                rel = file_path.relative_to(root)
+                return str(rel) if str(rel) != "." else file_path.name
+            except ValueError:
+                pass
+        return file_path.name
+
+
 

@@ -2,7 +2,7 @@
 Main application window for HiResToolsGUI.
 
 Wires together the config panel, file tree, output panel, SACD options,
-and progress panel.  Delegates conversion orchestration, task building,
+and progress panel. Delegates conversion orchestration, task building,
 tag assurance, and dialogs to dedicated modules.
 """
 
@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
@@ -42,14 +44,14 @@ class MainWindow(QMainWindow):
     Top-level window of HiResToolsGUI.
 
     ┌──────────────────────────────────────────┐
-    │  ConfigPanel  (dff2dsf + sacd_extract)   │
+    │  ConfigPanel (dff2dsf + sacd_extract)    │
     ├──────────────────────────────────────────┤
-    │  FilePanel          │  OutputPanel       │
-    │  (tree + buttons)   │  (mode selection)  │
-    │                     │  SacdPanel         │
-    ├─────────────────────┴────────────────────┤
+    │  FilePanel           │  OutputPanel      │
+    │  (tree + buttons)    │  (mode selection) │
+    │                      │  SacdPanel        │
+    ├──────────────────────┴───────────────────┤
     │  [Start Conversion]                      │
-    │  ProgressPanel  (bar + log)              │
+    │  ProgressPanel (bar + log)               │
     └──────────────────────────────────────────┘
     """
 
@@ -313,10 +315,10 @@ class MainWindow(QMainWindow):
                     str(rp), file_type, reason
                 )
 
-        if not Dialogs.warn_rejected_files(
-            self, rejected, len(valid)
-        ):
-            return
+            if not Dialogs.warn_rejected_files(
+                self, rejected, len(valid)
+            ):
+                return
 
         if not valid:
             QMessageBox.information(
@@ -359,6 +361,8 @@ class MainWindow(QMainWindow):
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
 
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
         self._orchestrator = ConversionOrchestrator(
             log_manager=self._log_manager,
             error_log=self._error_log,
@@ -375,6 +379,7 @@ class MainWindow(QMainWindow):
             sacd_cue=self._sacd_panel.cue_sheet(),
             sacd_output_format=self._sacd_panel.output_format_flag(),
             overwrite=overwrite,
+            keep_folder=self._sacd_panel.keep_folder(),
         )
         self._orchestrator.finished.connect(self._on_batch_finished)
         self._orchestrator.start(tasks)
@@ -385,6 +390,10 @@ class MainWindow(QMainWindow):
         if self._orchestrator is not None:
             self._orchestrator.cancel()
         self._progress_panel._btn_cancel.setEnabled(False)
+        self._log_manager.warning(
+            "Cancellation requested — finishing current file..."
+        )
+        self._progress_panel.append_log(self._log_manager.entries()[-1])
 
     @Slot(int, int, int)
     def _on_batch_finished(
@@ -392,7 +401,49 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Re-enable UI after batch completion."""
         self._running = False
+
+        QApplication.restoreOverrideCursor()
+
         self._file_panel.setEnabled(True)
         self._output_panel.setEnabled(True)
         self._config_panel.setEnabled(True)
+
+        # Re-evaluate SACD panel state based on current selection.
+        checked = self._file_panel.checked_files()
+        has_iso = any(f.suffix.lower() == ".iso" for f in checked)
+        self._sacd_panel.setEnabled(has_iso)
+
         self._update_start_button()
+
+    # ------------------------------------------------------------------
+    # Window close override
+    # ------------------------------------------------------------------
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Intercept window close requests.
+
+        If a conversion batch is currently running, the close request
+        is rejected to prevent file corruption from abruptly
+        terminating worker threads.
+
+        Parameters
+        ----------
+        event:
+            The close event to be accepted or ignored.
+        """
+        if self._running:
+            QMessageBox.warning(
+                self,
+                "Conversion In Progress",
+                "A conversion batch is currently running.\n\n"
+                "Please wait for it to complete or cancel it before "
+                "closing the application.",
+            )
+            event.ignore()
+            return
+
+        super().closeEvent(event)
+
+
+

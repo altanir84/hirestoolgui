@@ -4,10 +4,15 @@ Conversion task builder for HiResToolsGUI.
 Constructs :class:`ConversionTask` objects from a flat list of file
 paths, handling both DFF and ISO sources with correct destination
 path resolution.
+
+When multiple ISOs exist in the same album folder, each is placed in
+a ``DiscN`` sub-folder, with the number extracted from the filename
+when possible.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -85,6 +90,22 @@ class TaskBuilder:
                     "File not inside Artist/Album folder hierarchy",
                 )
                 return None
+
+            # Detect multiple ISOs in the same source album folder.
+            iso_siblings = sorted(
+                [p for p in src.parent.iterdir()
+                 if p.suffix.lower() == ".iso"],
+                key=lambda p: p.name.lower(),
+            )
+            if len(iso_siblings) > 1:
+                disc_num = self._extract_disc_number(src.stem)
+                if disc_num is not None:
+                    disc_name = f"Disc{disc_num}"
+                else:
+                    idx = iso_siblings.index(src)
+                    disc_name = f"Disc{idx + 1}"
+                dest_dir = dest_dir / disc_name
+
             dest = dest_dir / (src.stem + ".dsf")
         else:
             dest_dir = src.parent / "converted"
@@ -92,7 +113,6 @@ class TaskBuilder:
         return ConversionTask(
             source=src, destination=dest, converter="sacd_extract",
         )
-
 
     def _build_dff_task(
         self,
@@ -140,7 +160,6 @@ class TaskBuilder:
         filename = parts[-1]
         return Path(*levels) / filename
 
-
     @staticmethod
     def _iso_dest_dir(
         file_path: Path, output_root: Path,
@@ -157,3 +176,24 @@ class TaskBuilder:
             return None
         levels = list(parts[-4:-1])
         return output_root / Path(*levels)
+
+    @staticmethod
+    def _extract_disc_number(filename: str) -> Optional[int]:
+        """
+        Extract a disc number from an ISO filename.
+
+        Looks for patterns like ``SACD8``, ``Disc 9``, ``D1``, ``CD10``,
+        or a trailing number like ``album1``.
+        """
+        match = re.search(
+            r"(?:sacd|disc|disco|disk|cd|d)\s*(\d+)",
+            filename, re.IGNORECASE,
+        )
+        if match:
+            return int(match.group(1))
+        # Fallback: any trailing number.
+        match = re.search(r"(\d+)\s*$", filename)
+        if match:
+            return int(match.group(1))
+        return None
+
