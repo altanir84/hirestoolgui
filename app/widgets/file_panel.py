@@ -16,7 +16,6 @@ from PySide6.QtCore import Qt, Signal, Slot, QSettings, QThread
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QStandardItem
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QFileDialog,
     QHBoxLayout,
     QMenu,
@@ -407,16 +406,39 @@ class FilePanel(QWidget):
         if dlg.exec() != QDialog.Accepted:
             return
 
-        def _collect_checked(item):
+        # Collect all checked paths, then resolve ancestor/descendant
+        # conflicts: if both a parent and its child are checked, only
+        # the child is kept.
+        def _is_inside(child: Path, parent: Path) -> bool:
+            try:
+                child.relative_to(parent)
+                return True
+            except ValueError:
+                return False
+
+        def _collect_checked_paths(item, paths):
             if item.checkState() == Qt.Checked:
                 path = item.data(Qt.UserRole)
                 if path is not None and path.is_dir():
-                    self.add_folder(path)
+                    paths.append(path)
             for row in range(item.rowCount()):
-                _collect_checked(item.child(row))
+                _collect_checked_paths(item.child(row), paths)
 
+        checked_paths: List[Path] = []
         for row in range(model.rowCount()):
-            _collect_checked(model.item(row))
+            _collect_checked_paths(model.item(row), checked_paths)
+
+        resolved: List[Path] = []
+        for path in checked_paths:
+            if any(
+                other != path and _is_inside(other, path)
+                for other in checked_paths
+            ):
+                continue
+            resolved.append(path)
+
+        for path in resolved:
+            self.add_folder(path)
 
     @Slot()
     def _on_remove_folder(self) -> None:
@@ -480,15 +502,16 @@ class FilePanel(QWidget):
         menu = QMenu(self)
 
         if self.has_files():
-            
+            menu.addAction("Refresh Tree", self._refresh_tree)
             menu.addAction("Expand All", self._tree.expandAll)
             menu.addAction("Collapse All", self._tree.collapseAll)
-            menu.addSeparator()            
-            menu.addAction("Refresh Tree", self._refresh_tree)
-            menu.addAction("Clear All", self._clear_all)
-            menu.addSeparator()
 
         menu.addAction("Rescan Folders", self._rescan_folders)
+
+        if self.has_files():
+            menu.addSeparator()
+            menu.addAction("Clear All", self._clear_all)
+
         menu.exec(self._tree.viewport().mapToGlobal(pos))
 
     def _clear_all(self) -> None:
@@ -809,10 +832,6 @@ class FilePanel(QWidget):
                     result.add(entry)
         except OSError:
             pass
-
-
-
-
 
 
 

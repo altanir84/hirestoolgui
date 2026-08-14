@@ -8,7 +8,7 @@ to the destination DSF file after conversion by ``dff2dsf``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 from mutagen.dsdiff import DSDIFF
 from mutagen.dsf import DSF

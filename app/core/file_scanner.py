@@ -7,12 +7,11 @@ The resulting tree is ready to be consumed by :class:`FileTreeModel`.
 
 from __future__ import annotations
 
-import os
 import threading
 from pathlib import Path
 from typing import List, Optional, Set
 
-from app.models.file_node import FileNode, NodeType, CheckState
+from app.models.file_node import FileNode, NodeType
 
 
 class FileScanner:
