@@ -91,11 +91,7 @@ class ProgressPanel(QWidget):
 
         # Only auto-scroll if the user is already at the bottom.
         scrollbar = self._log_view.verticalScrollBar()
-        at_bottom = (
-            scrollbar.value() >= scrollbar.maximum() - 10
-        )
-        if at_bottom:
-            self._log_view.setTextCursor(cursor)
+        if scrollbar.value() >= scrollbar.maximum() - scrollbar.pageStep():
             self._log_view.ensureCursorVisible()
 
     def conversion_finished(self) -> None:

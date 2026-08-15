@@ -349,7 +349,12 @@ class MainWindow(QMainWindow):
 
         mode = self._output_panel.output_mode()
         output_root = self._output_panel.output_root()
-        tasks = self._task_builder.build(valid, mode, output_root)
+
+        tasks = self._task_builder.build(valid,
+                                         mode,
+                                        output_root,
+                                        tree_root=self._file_panel._model.root_node(),
+                                        )
 
         if not tasks:
             QMessageBox.information(
