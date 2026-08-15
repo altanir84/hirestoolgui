@@ -61,7 +61,7 @@ if [[ ! -f "$PROJECT_ROOT/packaging/appimage/$APP_ID.desktop" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$PROJECT_ROOT/app/assets/hires_toolgui.svg" ]]; then
+if [[ ! -f "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" ]]; then
     echo "ERROR: application icon not found."
     exit 1
 fi
@@ -142,10 +142,10 @@ cp "$PROJECT_ROOT/packaging/appimage/$APP_ID.desktop" \
 
 echo "==> Installing application icon..."
 
-cp "$PROJECT_ROOT/app/assets/hires_toolgui.svg" \
+cp "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" \
    "$APPDIR/$APP_ID.svg"
 
-cp "$PROJECT_ROOT/app/assets/hires_toolgui.svg" \
+cp "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" \
    "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 
 # ------------------------------------------------------------
