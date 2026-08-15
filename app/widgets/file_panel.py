@@ -99,6 +99,7 @@ class FilePanel(QWidget):
         self._warning_callback = None  # set by MainWindow
         self._root_folders: List[Path] = []
         self._tree_exclude: Set[Path] = set()
+        self._user_excluded: Set[Path] = set()
         self._cancel_event: Optional[threading.Event] = None
         self._scan_worker: Optional[_ScanWorker] = None
         self._scanning = False
@@ -442,24 +443,43 @@ class FilePanel(QWidget):
 
     @Slot()
     def _on_remove_folder(self) -> None:
-        """Remove root folders whose checkboxes are checked."""
+        """Remove folders whose checkboxes are checked."""
         root = self._model.root_node()
         if root is None:
             return
 
-        to_remove = []
-        for i in range(root.child_count()):
-            child = root.child(i)
-            if child.check_state == CheckState.CHECKED:
-                to_remove.append(child.path)
+        to_remove: List[Path] = []
+        self._collect_checked_folders(root, to_remove)
 
         if not to_remove:
             return
 
-        self._root_folders = [
-            f for f in self._root_folders if f not in to_remove
-        ]
-        self._refresh_tree()
+        for tr in to_remove:
+            if tr in self._root_folders:
+                self._root_folders.remove(tr)
+            else:
+                self._user_excluded.add(tr)
+            self._model.remove_by_path(tr)
+
+        # If tree view has no files left, reset everything.
+        if not self.has_files():
+            self._clear_all()
+            return
+
+        new_root = self._model.root_node()
+        self._update_status_label(new_root)
+        self._on_checked_changed()
+
+    def _collect_checked_folders(
+        self, node: FileNode, result: List[Path]
+    ) -> None:
+        """Recursively collect paths of CHECKED directory nodes."""
+        for i in range(node.child_count()):
+            child = node.child(i)
+            if child.node_type == NodeType.DIRECTORY:
+                if child.check_state == CheckState.CHECKED:
+                    result.append(child.path)
+                self._collect_checked_folders(child, result)
 
     @Slot()
     def _on_select_all(self) -> None:
@@ -518,6 +538,7 @@ class FilePanel(QWidget):
         """Remove all root folders and clear the tree."""
         self._root_folders.clear()
         self._tree_exclude.clear()
+        self._user_excluded.clear()
         empty_root = FileScanner([], self._warning_callback).scan()
         self._model.set_root_node(empty_root)
         self._lbl_status.setText("No folders added yet.")
@@ -554,8 +575,8 @@ class FilePanel(QWidget):
     def _refresh_tree(self) -> None:
         """
         Re-scan only the folders currently visible in the tree view,
-        skipping previously excluded subdirectories that contained no
-        ``.dff`` or ``.iso`` files.
+        skipping previously excluded subdirectories and user-removed
+        folders.
         """
         if not self._root_folders:
             return
@@ -563,7 +584,7 @@ class FilePanel(QWidget):
         self._start_scan(
             list(self._root_folders),
             "Refreshing tree...",
-            exclude_folders=self._tree_exclude,
+            exclude_folders=self._tree_exclude | self._user_excluded,
         )
 
     def _rescan_folders(self) -> None:
@@ -675,38 +696,7 @@ class FilePanel(QWidget):
         iso_count = new_root.total_iso_count
         total = total_dff + iso_count
 
-        if total == 0 and len(self._root_folders) > 0:
-            if was_cancelled:
-                self._lbl_status.setText("Folder scanning cancelled.")
-                self._lbl_status.setStyleSheet(
-                    "color: #e74c3c; padding: 4px;"
-                )
-            else:
-                self._lbl_status.setText(
-                    "No DFF or ISO files found in the selected folder(s)."
-                )
-                self._lbl_status.setStyleSheet(
-                    "color: #e74c3c; padding: 4px;"
-                )
-        else:
-            if iso_count > 0:
-                status = (
-                    f"{total_dff} DFF + {iso_count} ISO file(s) across "
-                    f"{len(self._root_folders)} folder(s)"
-                )
-            else:
-                status = (
-                    f"{total_dff} DFF file(s) across "
-                    f"{len(self._root_folders)} folder(s)"
-                )
-            if was_cancelled:
-                status += " (scan cancelled)"
-            self._lbl_status.setText(status)
-            self._lbl_status.setStyleSheet(
-                "color: #e74c3c; padding: 4px;"
-                if was_cancelled
-                else "color: #888; padding: 4px;"
-            )
+        self._update_status_label(new_root, was_cancelled)
 
         has_items = self.has_files()
         self._btn_remove.setEnabled(len(self._root_folders) > 0)
@@ -790,6 +780,55 @@ class FilePanel(QWidget):
             directory, self._root_folders
         )
         self._lbl_status.setText(f"Scanning... {display}/")
+
+    # ------------------------------------------------------------------
+    # Status label
+    # ------------------------------------------------------------------
+
+    def _update_status_label(
+        self, node: Optional[FileNode], was_cancelled: bool = False
+    ) -> None:
+        """Update the status label with file counts from *node*."""
+        if node is None or node.total_file_count == 0:
+            if len(self._root_folders) == 0:
+                self._lbl_status.setText("No folders added yet.")
+                self._lbl_status.setStyleSheet(
+                    "color: #888; padding: 4px;"
+                )
+            elif was_cancelled:
+                self._lbl_status.setText("Folder scanning cancelled.")
+                self._lbl_status.setStyleSheet(
+                    "color: #e74c3c; padding: 4px;"
+                )
+            else:
+                self._lbl_status.setText(
+                    "No DFF or ISO files found in the selected folder(s)."
+                )
+                self._lbl_status.setStyleSheet(
+                    "color: #e74c3c; padding: 4px;"
+                )
+            return
+
+        total_dff = node.total_dff_count
+        iso_count = node.total_iso_count
+        if iso_count > 0:
+            status = (
+                f"{total_dff} DFF + {iso_count} ISO file(s) across "
+                f"{len(self._root_folders)} folder(s)"
+            )
+        else:
+            status = (
+                f"{total_dff} DFF file(s) across "
+                f"{len(self._root_folders)} folder(s)"
+            )
+        if was_cancelled:
+            status += " (scan cancelled)"
+        self._lbl_status.setText(status)
+        self._lbl_status.setStyleSheet(
+            "color: #e74c3c; padding: 4px;"
+            if was_cancelled
+            else "color: #888; padding: 4px;"
+        )
 
     # ------------------------------------------------------------------
     # Tree path collection for exclusion logic

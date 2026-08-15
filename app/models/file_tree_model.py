@@ -44,7 +44,7 @@ class FileTreeModel(QStandardItemModel):
         super().__init__(parent)
         self.setHorizontalHeaderLabels(["Name"])
         self._root_node: Optional[FileNode] = None
-        self._updating = False # guard flag
+        self._updating = False  # guard flag
         self.itemChanged.connect(self._on_item_changed)
 
     # ------------------------------------------------------------------
@@ -78,6 +78,20 @@ class FileTreeModel(QStandardItemModel):
         self._collect_checked(self.invisibleRootItem(), result)
         return result
 
+    def remove_by_path(self, path: Path) -> None:
+        """
+        Remove the tree node corresponding to *path* from both the
+        :class:`QStandardItemModel` and the underlying
+        :class:`FileNode` tree.
+
+        If *path* is not found in the tree, this method does nothing.
+        """
+        root_item = self.invisibleRootItem()
+        for row in range(root_item.rowCount()):
+            item = root_item.child(row)
+            if self._remove_item_by_path(item, path):
+                return
+
     # ------------------------------------------------------------------
     # Helpers – tree construction
     # ------------------------------------------------------------------
@@ -98,7 +112,8 @@ class FileTreeModel(QStandardItemModel):
                 else Qt.Unchecked
             )
             item.setFlags(
-                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                | Qt.ItemIsUserCheckable
             )
             item.setEditable(False)
         elif node.is_iso():
@@ -108,7 +123,8 @@ class FileTreeModel(QStandardItemModel):
                 else Qt.Unchecked
             )
             item.setFlags(
-                Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+                Qt.ItemIsEnabled | Qt.ItemIsSelectable
+                | Qt.ItemIsUserCheckable
             )
             item.setEditable(False)
             item.setForeground(Qt.GlobalColor.cyan)
@@ -124,9 +140,9 @@ class FileTreeModel(QStandardItemModel):
             )
             item.setEditable(False)
 
-            for i in range(node.child_count()):
-                child_item = self._build_item(node.child(i))
-                item.appendRow(child_item)
+        for i in range(node.child_count()):
+            child_item = self._build_item(node.child(i))
+            item.appendRow(child_item)
 
         return item
 
@@ -142,7 +158,6 @@ class FileTreeModel(QStandardItemModel):
         """
         if self._updating:
             return
-        
         node = item.data(_FILE_NODE_ROLE)
         if node is None:
             return
@@ -180,7 +195,6 @@ class FileTreeModel(QStandardItemModel):
             if item.hasChildren():
                 self._sync_item_states(item)
 
-    
     # ------------------------------------------------------------------
     # Helpers – traversal
     # ------------------------------------------------------------------
@@ -198,6 +212,29 @@ class FileTreeModel(QStandardItemModel):
             if item.hasChildren():
                 self._collect_checked(item, result)
 
+    def _remove_item_by_path(
+        self, parent_item: QStandardItem, path: Path
+    ) -> bool:
+        for row in range(parent_item.rowCount()):
+            item = parent_item.child(row)
+            node = item.data(_FILE_NODE_ROLE)
+            if node is not None and node.path == path:                
+                parent_node = parent_item.data(_FILE_NODE_ROLE)
+                if parent_node is not None:
+                    parent_node.remove_child(node)
+                elif self._root_node is not None:
+                    self._root_node.remove_child(node)
+                parent_item.removeRow(row)
+                return True
+            if item.hasChildren():
+                if self._remove_item_by_path(item, path):
+                    return True
+        return False
+
+
+
+
+    
     # ------------------------------------------------------------------
     # Static helpers
     # ------------------------------------------------------------------

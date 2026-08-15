@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
         self._output_panel.setEnabled(False)
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
-        self._progress_panel._btn_cancel.setEnabled(True)  # DEBUG
+        self._progress_panel._btn_cancel.setEnabled(True)
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
