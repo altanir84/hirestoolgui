@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from PySide6.QtCore import Qt, Signal, Slot, QSettings, QThread
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QStandardItem
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QStandardItem
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -106,6 +106,7 @@ class FilePanel(QWidget):
         self.setAcceptDrops(True)
         self._build_ui()
         self._connect_signals()
+        self._update_menu_states()
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,53 +169,54 @@ class FilePanel(QWidget):
         # -- Toolbar --
         toolbar = QHBoxLayout()
 
-        self._btn_add = QPushButton("Add Folder...")
-        self._btn_add.setToolTip(
-            "Add a root folder to scan for .dff and .iso files"
-        )
-        self._btn_add_multiple = QPushButton("Add Multiple...")
-        self._btn_add_multiple.setToolTip(
-            "Add multiple folders to scan for .dff and .iso files"
-        )
+        # Folders dropdown.
+        self._btn_folders = QPushButton("Folders")
+        self._menu_folders = QMenu(self)
+        self._btn_folders.setMenu(self._menu_folders)
 
-        self._btn_refresh_tree = QPushButton("Refresh Tree")
-        self._btn_refresh_tree.setToolTip(
-            "Re-scan only folders currently shown in the tree"
+        self._act_add = QAction("Add Folder...", self)
+        self._act_add.triggered.connect(self._on_add_folder)
+        self._menu_folders.addAction(self._act_add)
+
+        self._act_add_multiple = QAction("Add Multiple...", self)
+        self._act_add_multiple.triggered.connect(
+            self._on_add_multiple_folders
         )
-        self._btn_refresh_tree.setEnabled(False)
+        self._menu_folders.addAction(self._act_add_multiple)
 
-        self._btn_rescan_folders = QPushButton("Rescan Folders")
-        self._btn_rescan_folders.setToolTip(
-            "Re-scan all imported folders for new or changed files"
-        )
-        self._btn_rescan_folders.setEnabled(False)
+        self._menu_folders.addSeparator()
 
-        self._btn_reset = QPushButton("Reset Folders")
-        self._btn_reset.setToolTip(
-            "Clear all imported folders and reset to initial state"
-        )
-        self._btn_reset.setEnabled(False)
+        self._act_rescan = QAction("Rescan Folders", self)
+        self._act_rescan.triggered.connect(self._rescan_folders)
+        self._menu_folders.addAction(self._act_rescan)
 
-        self._btn_remove = QPushButton("Remove Selected")
-        self._btn_remove.setToolTip(
-            "Remove the selected root folder and its subtree"
-        )
-        self._btn_remove.setEnabled(False)
+        self._act_reset = QAction("Reset Folders", self)
+        self._act_reset.triggered.connect(self._clear_all)
+        self._menu_folders.addAction(self._act_reset)
 
-        self._btn_select_all = QPushButton("Select All")
-        self._btn_select_all.setEnabled(False)
-        self._btn_deselect_all = QPushButton("Deselect All")
-        self._btn_deselect_all.setEnabled(False)
+        self._menu_folders.addSeparator()
 
-        toolbar.addWidget(self._btn_add)
-        toolbar.addWidget(self._btn_add_multiple)
-        toolbar.addWidget(self._btn_refresh_tree)
-        toolbar.addWidget(self._btn_rescan_folders)
-        toolbar.addWidget(self._btn_reset)
-        toolbar.addWidget(self._btn_remove)
+        self._act_remove = QAction("Remove Selected", self)
+        self._act_remove.triggered.connect(self._on_remove_folder)
+        self._menu_folders.addAction(self._act_remove)
+
+        # Select dropdown.
+        self._btn_select = QPushButton("Select")
+        self._btn_select.setEnabled(False)
+        self._menu_select = QMenu(self)
+        self._btn_select.setMenu(self._menu_select)
+
+        self._act_select_all = QAction("Select All", self)
+        self._act_select_all.triggered.connect(self._on_select_all)
+        self._menu_select.addAction(self._act_select_all)
+
+        self._act_deselect_all = QAction("Deselect All", self)
+        self._act_deselect_all.triggered.connect(self._on_deselect_all)
+        self._menu_select.addAction(self._act_deselect_all)
+
+        toolbar.addWidget(self._btn_folders)
+        toolbar.addWidget(self._btn_select)
         toolbar.addStretch()
-        toolbar.addWidget(self._btn_select_all)
-        toolbar.addWidget(self._btn_deselect_all)
 
         # -- Tree view --
         self._tree = QTreeView()
@@ -257,19 +259,25 @@ class FilePanel(QWidget):
     # ------------------------------------------------------------------
 
     def _connect_signals(self) -> None:
-        self._btn_add.clicked.connect(self._on_add_folder)
-        self._btn_add_multiple.clicked.connect(
-            self._on_add_multiple_folders
-        )
-        self._btn_refresh_tree.clicked.connect(self._refresh_tree)
-        self._btn_rescan_folders.clicked.connect(self._rescan_folders)
-        self._btn_reset.clicked.connect(self._clear_all)
-        self._btn_remove.clicked.connect(self._on_remove_folder)
-        self._btn_select_all.clicked.connect(self._on_select_all)
-        self._btn_deselect_all.clicked.connect(self._on_deselect_all)
         self._model.checked_files_changed.connect(
             self._on_checked_changed
         )
+
+    # ------------------------------------------------------------------
+    # Menu state management
+    # ------------------------------------------------------------------
+
+    def _update_menu_states(self) -> None:
+        """Update enabled state of all menu actions based on current data."""
+        has_roots = len(self._root_folders) > 0
+        has_items = self.has_files()
+
+        self._act_rescan.setEnabled(has_roots)
+        self._act_reset.setEnabled(has_roots)
+        self._act_remove.setEnabled(has_roots)
+        self._btn_select.setEnabled(has_items)
+        self._act_select_all.setEnabled(has_items)
+        self._act_deselect_all.setEnabled(has_items)
 
     # ------------------------------------------------------------------
     # Slots
@@ -407,9 +415,6 @@ class FilePanel(QWidget):
         if dlg.exec() != QDialog.Accepted:
             return
 
-        # Collect all checked paths, then resolve ancestor/descendant
-        # conflicts: if both a parent and its child are checked, only
-        # the child is kept.
         def _is_inside(child: Path, parent: Path) -> bool:
             try:
                 child.relative_to(parent)
@@ -461,13 +466,13 @@ class FilePanel(QWidget):
                 self._user_excluded.add(tr)
             self._model.remove_by_path(tr)
 
-        # If tree view has no files left, reset everything.
         if not self.has_files():
             self._clear_all()
             return
 
         new_root = self._model.root_node()
         self._update_status_label(new_root)
+        self._update_menu_states()
         self._on_checked_changed()
 
     def _collect_checked_folders(
@@ -541,15 +546,9 @@ class FilePanel(QWidget):
         self._user_excluded.clear()
         empty_root = FileScanner([], self._warning_callback).scan()
         self._model.set_root_node(empty_root)
-        self._lbl_status.setText("No folders added yet.")
-        self._lbl_status.setStyleSheet("color: #888; padding: 4px;")
+        self._update_status_label(None)
         self._lbl_selected.setText("")
-        self._btn_remove.setEnabled(False)
-        self._btn_refresh_tree.setEnabled(False)
-        self._btn_rescan_folders.setEnabled(False)
-        self._btn_reset.setEnabled(False)
-        self._btn_select_all.setEnabled(False)
-        self._btn_deselect_all.setEnabled(False)
+        self._update_menu_states()
         self.scan_completed.emit(0)
         self._on_checked_changed()
 
@@ -591,9 +590,6 @@ class FilePanel(QWidget):
         """
         Re-scan all imported root folders, including those that did
         not previously contain any ``.dff`` or ``.iso`` files.
-
-        Useful when the user has added new files to folders that were
-        previously empty.
         """
         if not self._root_folders:
             return
@@ -611,15 +607,6 @@ class FilePanel(QWidget):
         on completion.
 
         If a scan is already running, it is cancelled first.
-
-        Parameters
-        ----------
-        folders:
-            List of absolute paths to scan.
-        label:
-            Status label text shown during the scan.
-        exclude_folders:
-            Optional set of paths to skip during the scan.
         """
         if self._scanning:
             self._cancel_scan_and_wait()
@@ -647,10 +634,7 @@ class FilePanel(QWidget):
         self._scan_worker.start()
 
     def _cancel_scan_and_wait(self) -> None:
-        """
-        Cancel the running scan and block until its worker has fully
-        stopped, ensuring clean state before starting a new scan.
-        """
+        """Cancel the running scan and wait for the worker to stop."""
         if self._cancel_event is not None:
             self._cancel_event.set()
 
@@ -678,8 +662,6 @@ class FilePanel(QWidget):
         self._scanning = False
         self._cancel_event = None
 
-        # Compute which folders are in the tree view so we can
-        # exclude everything else on the next Refresh Tree.
         tree_paths: Set[Path] = set()
         self._collect_tree_paths(new_root, tree_paths)
 
@@ -692,19 +674,10 @@ class FilePanel(QWidget):
 
         self._set_buttons_enabled(True)
 
-        total_dff = new_root.total_dff_count
-        iso_count = new_root.total_iso_count
-        total = total_dff + iso_count
+        total = new_root.total_dff_count + new_root.total_iso_count
 
         self._update_status_label(new_root, was_cancelled)
-
-        has_items = self.has_files()
-        self._btn_remove.setEnabled(len(self._root_folders) > 0)
-        self._btn_refresh_tree.setEnabled(has_items)
-        self._btn_rescan_folders.setEnabled(len(self._root_folders) > 0)
-        self._btn_reset.setEnabled(len(self._root_folders) > 0)
-        self._btn_select_all.setEnabled(has_items)
-        self._btn_deselect_all.setEnabled(has_items)
+        self._update_menu_states()
 
         self.scan_completed.emit(total)
         self._on_checked_changed()
@@ -712,35 +685,17 @@ class FilePanel(QWidget):
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         """Enable or disable toolbar buttons during scan."""
-        self._btn_add.setEnabled(enabled)
-        self._btn_add_multiple.setEnabled(enabled)
-        self._btn_remove.setEnabled(
-            enabled and len(self._root_folders) > 0
-        )
-        if enabled:
-            has_items = self.has_files()
-            self._btn_refresh_tree.setEnabled(has_items)
-            self._btn_rescan_folders.setEnabled(
-                len(self._root_folders) > 0
-            )
-            self._btn_reset.setEnabled(len(self._root_folders) > 0)
-            self._btn_select_all.setEnabled(has_items)
-            self._btn_deselect_all.setEnabled(has_items)
-        else:
-            self._btn_refresh_tree.setEnabled(False)
-            self._btn_rescan_folders.setEnabled(False)
-            self._btn_reset.setEnabled(False)
-            self._btn_select_all.setEnabled(False)
-            self._btn_deselect_all.setEnabled(False)
+        self._btn_folders.setEnabled(enabled)
+        self._btn_select.setEnabled(enabled)
+        if not enabled:
+            self._act_remove.setEnabled(False)
+            self._act_rescan.setEnabled(False)
+            self._act_reset.setEnabled(False)
+            self._act_select_all.setEnabled(False)
+            self._act_deselect_all.setEnabled(False)
 
     def _set_tree_state(self, checked: bool) -> None:
-        """
-        Recursively check or uncheck every item in the tree.
-
-        Blocks the model's ``itemChanged`` signal during the bulk
-        update to avoid feedback loops, then emits
-        ``checked_files_changed`` once.
-        """
+        """Recursively check or uncheck every item in the tree."""
         file_state = CheckState.CHECKED if checked else CheckState.UNCHECKED
         root_node = self._model.root_node()
 
@@ -839,7 +794,7 @@ class FilePanel(QWidget):
     ) -> None:
         """
         Recursively collect paths of all directories that are part of
-        the tree view (i.e. contain or lead to ``.dff``/``.iso`` files).
+        the tree view.
         """
         for i in range(node.child_count()):
             child = node.child(i)
