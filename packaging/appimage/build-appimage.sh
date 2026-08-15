@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 APP_NAME="HiResToolsGUI"
 APP_ID="hirestoolsgui"
-VERSION="1.0.0"
+VERSION="1.1.0"
 ARCH="x86_64"
 
 SPEC_FILE="$PROJECT_ROOT/HiResToolsGUI.spec"

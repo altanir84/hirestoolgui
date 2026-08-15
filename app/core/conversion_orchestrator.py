@@ -223,9 +223,9 @@ class ConversionOrchestrator(QObject):
 
         if exit_code == 0:
             self._success_count += 1
-            self._log_manager.success(f"OK: {Path(source).name}")
-
+            
             if converter_type == "dff2dsf":
+                self._log_manager.success(f"OK: {Path(source).name} -> {Path(dest).name}")
                 applied = self._tag_preserver.apply_tags(
                     Path(source), Path(dest)
                 )
@@ -236,6 +236,7 @@ class ConversionOrchestrator(QObject):
                 PostProcessor.process_dff_output(Path(dest))
 
             if converter_type == "sacd_extract":
+                self._log_manager.success(f"OK: {Path(source).name}")
                 dest_path = Path(dest)
                 dest_dir = dest_path.parent
 
