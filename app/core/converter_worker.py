@@ -171,7 +171,7 @@ class ConverterWorker(QObject):
         if size % 2048 != 0 and size % 2064 == 0:
             self._progress_queue.put((
                 0, 0,
-                "Incompatible SACD detected (2064-byte sectors). Attempting workaround..."
+                "Incompatible SACD ISO file detected (2064-byte sectors). Attempting workaround..."
             ))
 
             temp_path = Path(output_dir) / ".hirestoolsgui_temp.iso"
