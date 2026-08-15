@@ -409,8 +409,8 @@ class Dialogs:
     def _help_getting_started(cls) -> str:
         return """
         <style>
-            ol li { margin-bottom : 8px; }
-            ul li { margin-bottom : 4px; }
+            ol li { margin-bottom: 8px; }
+            ul li { margin-bottom: 4px; }
         </style>
         <h3>Step-by-Step Guide</h3>
         <ol>
@@ -418,19 +418,22 @@ class Dialogs:
             the paths to <code>dff2dsf</code> and
             <code>sacd_extract</code>. A green check indicates a
             valid, executable binary.</li>
-            <li><b>Add folders:</b> Click <i>Add Folder…</i> to
-            import a single directory, or <i>Add Multiple…</i> to
-            select several folders at once using a checkable
-            directory tree.</li>
+            <li><b>Add folders:</b> Click <i>Folders &gt; Add
+            Folder&hellip;</i> to import a single directory, or
+            <i>Folders &gt; Add Multiple&hellip;</i> to select
+            several folders at once using a checkable directory
+            tree.</li>
             <li><b>Select files:</b> Use the checkboxes in the tree
             view to choose which <code>.dff</code> and
-            <code>.iso</code> files to convert. Use <i>Select
-            All</i> / <i>Deselect All</i> for bulk operations.</li>
+            <code>.iso</code> files to convert. Use <i>Select &gt;
+            Select All</i> / <i>Deselect All</i> for bulk
+            operations.</li>
             <li><b>Choose output mode:</b>
                 <ul>
-                    <li><i>Single root</i> — replicates the tree-view
-                    folder structure under one output directory.</li>
-                    <li><i>Per folder</i> — creates a
+                    <li><i>Single root</i> &mdash; replicates the
+                    tree-view folder structure under one output
+                    directory.</li>
+                    <li><i>Per folder</i> &mdash; creates a
                     <code>converted/</code> subfolder next to each
                     source file.</li>
                 </ul>
@@ -445,7 +448,7 @@ class Dialogs:
             SACD extraction.</li>
         </ol>
         """
-
+    
     @classmethod
     def _help_output_structure(cls) -> str:
         return """
@@ -518,18 +521,26 @@ class Dialogs:
     @classmethod
     def _help_features(cls) -> str:
         return """
+        <style>
+            ul li { margin-bottom: 4px; }
+        </style>
         <h3>File Management</h3>
         <ul>
-            <li><b>Refresh Tree:</b> re-scans only the folders
-            currently shown in the tree view, skipping previously
-            empty subdirectories.</li>
+            <li><b>Folders menu:</b> Add Folder&hellip;, Add
+            Multiple&hellip;, Rescan Folders, Reset Folders, Remove
+            Selected.</li>
+            <li><b>Select menu:</b> Select All, Deselect All.</li>
+            <li><b>Refresh Tree:</b> available in the right-click
+            context menu. Re-scans only the folders currently shown
+            in the tree view, skipping previously empty
+            subdirectories.</li>
             <li><b>Rescan Folders:</b> re-scans all imported folders,
             including those that were previously empty. Useful when
             new files have been added.</li>
             <li><b>Reset Folders:</b> clears all imported folders and
             returns to the initial state.</li>
-            <li><b>Remove Selected:</b> removes checked root folders
-            from the tree view and refreshes.</li>
+            <li><b>Remove Selected:</b> removes checked folders from
+            the tree view.</li>
         </ul>
 
         <h3>Conversion</h3>
@@ -554,6 +565,3 @@ class Dialogs:
             separate error log for non-processed files.</li>
         </ul>
         """
-
-
-
