@@ -149,7 +149,7 @@ cp "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" \
    "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 
 # ------------------------------------------------------------
-# 9. Create .DirIcon
+# 9. Create .DirIcon 
 # ------------------------------------------------------------
 
 echo "==> Creating .DirIcon..."
