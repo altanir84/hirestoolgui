@@ -28,8 +28,8 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("HiResToolsGUI")
     app.setOrganizationName("HiResToolsGUI")
-    app.setApplicationVersion("1.0.0")
-    app.setWindowIcon(QIcon(str(resource_path("assets/hires_toolgui.svg"))))
+    app.setApplicationVersion("1.1.0")
+    app.setWindowIcon(QIcon(str(resource_path("assets/hirestoolsgui.svg"))))
 
     # Detect system dark-mode preference (Qt 6.5+).
     # Fall back to a dark palette on older versions.

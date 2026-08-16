@@ -123,6 +123,19 @@ class FileNode:
         """Number of immediate children."""
         return len(self.children)
 
+    def remove_child(self, child: FileNode) -> None:
+        """
+        Remove *child* from this node's children list and detach it.
+
+        After removal, ancestor check-states and file counts are
+        recalculated.
+        """
+        if child in self.children:
+            self.children.remove(child)
+            child.parent = None
+            self._recompute_self()
+            self._recompute_ancestors()
+
     # ------------------------------------------------------------------
     # Check-state propagation
     # ------------------------------------------------------------------
@@ -180,6 +193,41 @@ class FileNode:
         self.checked_file_count = (
             file_count if state == CheckState.CHECKED else 0
         )
+
+    def _recompute_self(self) -> None:
+        """Recalculate this node's counts and check-state from children."""
+        checked = 0
+        total = 0
+        dff = 0
+        iso = 0
+        for child in self.children:
+            if child.node_type == NodeType.FILE:
+                total += 1
+                dff += 1
+                if child.check_state == CheckState.CHECKED:
+                    checked += 1
+            elif child.node_type == NodeType.ISO:
+                total += 1
+                iso += 1
+                if child.check_state == CheckState.CHECKED:
+                    checked += 1
+            else:
+                total += child.total_file_count
+                checked += child.checked_file_count
+                dff += child.total_dff_count
+                iso += child.total_iso_count
+
+        self.total_file_count = total
+        self.total_dff_count = dff
+        self.total_iso_count = iso
+        self.checked_file_count = checked
+
+        if checked == 0:
+            self.check_state = CheckState.UNCHECKED
+        elif checked == total:
+            self.check_state = CheckState.CHECKED
+        else:
+            self.check_state = CheckState.PARTIALLY_CHECKED
 
     def _recompute_ancestors(self) -> None:
         """Walk upward, recalculating parent check-states from children."""

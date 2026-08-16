@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 APP_NAME="HiResToolsGUI"
 APP_ID="hirestoolsgui"
-VERSION="1.0.0"
+VERSION="1.1.0"
 ARCH="x86_64"
 
 SPEC_FILE="$PROJECT_ROOT/HiResToolsGUI.spec"
@@ -61,7 +61,7 @@ if [[ ! -f "$PROJECT_ROOT/packaging/appimage/$APP_ID.desktop" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$PROJECT_ROOT/app/assets/hires_toolgui.svg" ]]; then
+if [[ ! -f "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" ]]; then
     echo "ERROR: application icon not found."
     exit 1
 fi
@@ -142,10 +142,10 @@ cp "$PROJECT_ROOT/packaging/appimage/$APP_ID.desktop" \
 
 echo "==> Installing application icon..."
 
-cp "$PROJECT_ROOT/app/assets/hires_toolgui.svg" \
+cp "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" \
    "$APPDIR/$APP_ID.svg"
 
-cp "$PROJECT_ROOT/app/assets/hires_toolgui.svg" \
+cp "$PROJECT_ROOT/app/assets/hirestoolsgui.svg" \
    "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 
 # ------------------------------------------------------------

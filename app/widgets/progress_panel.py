@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -61,7 +61,6 @@ class ProgressPanel(QWidget):
         """Reset progress bars and enable the Cancel button."""
         self._bar_overall.setValue(0)
         self._lbl_overall.setText("Ready")
-        # self._btn_cancel.setEnabled(False)  # DEBUG
         self._log_view.clear()
         self._log_manager.clear()
 
@@ -90,9 +89,10 @@ class ProgressPanel(QWidget):
         )
         cursor.insertText(f"{entry.message}\n")
 
-        # Auto-scroll to bottom.
-        self._log_view.setTextCursor(cursor)
-        self._log_view.ensureCursorVisible()
+        # Only auto-scroll if the user is already at the bottom.
+        scrollbar = self._log_view.verticalScrollBar()
+        if scrollbar.value() >= scrollbar.maximum() - scrollbar.pageStep():
+            self._log_view.ensureCursorVisible()
 
     def conversion_finished(self) -> None:
         """Disable the Cancel button and mark progress as complete."""
@@ -126,8 +126,8 @@ class ProgressPanel(QWidget):
 
 
         self._btn_cancel = QPushButton("Cancel")
-        self._btn_cancel.setEnabled(False)
         self._btn_cancel.setFixedWidth(80)
+        self._btn_cancel.setEnabled(False)
         self._btn_cancel.clicked.connect(self.cancel_requested.emit)
 
         progress_layout.addWidget(self._bar_overall, 2)
@@ -146,4 +146,3 @@ class ProgressPanel(QWidget):
 
         layout.addLayout(progress_layout)
         layout.addWidget(self._log_view, 1)
-

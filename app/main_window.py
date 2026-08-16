@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QAction
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -68,6 +68,7 @@ class MainWindow(QMainWindow):
         self._orchestrator: Optional[ConversionOrchestrator] = None
         self._running = False
 
+        self._build_menu()
         self._build_ui()
         self._connect_signals()
         self._update_binary_statuses()
@@ -133,6 +134,26 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(1, 1)
 
         root_layout.addWidget(self._splitter, 1)
+
+    def _build_menu(self) -> None:
+        """Create the menu bar with Help menu."""
+        menu_bar = self.menuBar()
+
+        help_menu = menu_bar.addMenu("Help")
+
+        help_action = QAction("Help", self)
+        help_action.triggered.connect(
+            lambda: Dialogs.show_help(self)
+        )
+        help_menu.addAction(help_action)
+
+        help_menu.addSeparator()
+
+        about_action = QAction("About", self)
+        about_action.triggered.connect(
+            lambda: Dialogs.show_about(self)
+        )
+        help_menu.addAction(about_action)
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -349,7 +370,12 @@ class MainWindow(QMainWindow):
 
         mode = self._output_panel.output_mode()
         output_root = self._output_panel.output_root()
-        tasks = self._task_builder.build(valid, mode, output_root)
+
+        tasks = self._task_builder.build(valid,
+                                         mode,
+                                        output_root,
+                                        tree_root=self._file_panel._model.root_node(),
+                                        )
 
         if not tasks:
             QMessageBox.information(
@@ -380,7 +406,7 @@ class MainWindow(QMainWindow):
         self._output_panel.setEnabled(False)
         self._config_panel.setEnabled(False)
         self._sacd_panel.setEnabled(False)
-        self._progress_panel._btn_cancel.setEnabled(True)  # DEBUG
+        self._progress_panel._btn_cancel.setEnabled(True)
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
