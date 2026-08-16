@@ -1,3 +1,7 @@
+<p align= "center"><img width="800" alt="hirestoolsgui-v1 1 0" src="https://github.com/user-attachments/assets/9df6e0ae-43eb-48d8-be16-0c9a371505a2" />
+</p>
+
+
 # HiResToolsGUI
 
 A graphical interface for converting high-resolution audio files on Linux.
