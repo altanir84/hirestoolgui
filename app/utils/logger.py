@@ -92,7 +92,7 @@ class LogManager:
     # ------------------------------------------------------------------
 
     def _emit(self, level: str, message: str) -> None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         entry = LogEntry(timestamp, level, message)
         self._buffer.append(entry)
 
@@ -162,7 +162,7 @@ class ErrorLogManager:
         stderr:
             Standard error output from the converter, if any.
         """
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"FAILED [{file_type}] {source} (exit={exit_code})"
         self._buffer.append(LogEntry(timestamp, "ERROR", msg))
         if stderr:
@@ -190,7 +190,7 @@ class ErrorLogManager:
             Human-readable explanation (e.g. path validation, collision,
             invalid folder structure).
         """
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"SKIPPED [{file_type}] {source} — {reason}"
         self._buffer.append(LogEntry(timestamp, "WARNING", msg))
         self._has_entries = True
