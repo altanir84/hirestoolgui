@@ -47,23 +47,25 @@ Built with PySide6 and Python 3.10+.
 
 ## Requirements
 
-- **Python** 3.10 or later
+- **Python 3.10+** or the pre-compiled **AppImage** available on [Releases](https://github.com/altanir84/hirestoolsgui/releases)
 - **[dff2dsf](https://signalyst.com/)** — DFF to DSF command-line converter (Signalyst) — Linux version
 - **[sacd_extract](https://github.com/setmind/sacd-ripper)** — SACD ISO extraction tool for Linux
-
-### Python packages
-
-PySide6
-mutagen
-
-Install with:
-
-
-pip install -r requirements.txt
 
 ---
 
 ## Installation
+
+### AppImage (Recommended)
+
+Download the latest `.AppImage` from [Releases](https://github.com/altanir84/hirestoolsgui/releases), make it executable, and run:
+
+chmod +x HiResToolsGUI-*.AppImage
+./HiResToolsGUI-*.AppImage
+
+No python dependencies required — everything is bundled.
+
+### From Source
+
 ```bash
 git clone https://github.com/altanir84/hirestoolsgui.git
 cd hirestoolgui
@@ -76,7 +78,21 @@ pip install -r requirements.txt
 
 ## Usage
 
+### AppImage
+```bash
+./HiResToolsGUI-*.AppImage
+```
+
+### From Source
+```bash
 python3 main.py
+```
+
+
+***Note for AppImage users:*** The `dff2dsf` and `sacd_extract` binaries
+are not included in the AppImage. You must install them separately and
+configure their paths in the Converter Configuration panel.
+
 
 1. Configure the paths to dff2dsf and sacd_extract in the Converter Configuration panel. The application auto-detects them if they are on your $PATH.
 
@@ -102,13 +118,19 @@ hirestoolsgui/
 └── app/
     ├── __init__.py
     ├── main_window.py              # Main window — UI assembly and signal wiring
+    ├── assets/
+    │   ├── github.svg              # GitHub icon (light theme)
+    │   ├── github_white.svg        # GitHub icon (dark theme)
+    │   └── hiretoolgui.svg         # Application icon
     ├── core/
     │   ├── __init__.py
     │   ├── conversion_orchestrator.py  # Batch lifecycle: threads, workers, progress polling
     │   ├── converter_worker.py         # Sequential converter (dff2dsf + sacd_extract) in a QThread
     │   ├── file_scanner.py             # Recursive filesystem scanner for .dff and .iso files
+    │   ├── folder_manager.py           # Root folder state, tree/user exclusions
     │   ├── path_validator.py           # Path safety validation for command-line arguments
     │   ├── post_processor.py           # Post-conversion normalisation (filenames, ID3 tags, CUE sheets)
+    │   ├── scan_orchestrator.py        # Background scan lifecycle, worker threads, cancellation
     │   ├── structure_analyzer.py       # Folder-structure analyser for artist/album/disc inference
     │   ├── tag_assurance.py            # Pre-conversion tag verification and editor integration
     │   ├── tag_preserver.py            # ID3 tag cache and restore (DFF → DSF via Mutagen)
@@ -119,16 +141,19 @@ hirestoolsgui/
     │   └── file_tree_model.py          # QStandardItemModel backing the tree view
     ├── utils/
     │   ├── __init__.py
-    │   └── logger.py                   # In-memory ring buffer, file-based logging, error log
+    │   ├── logger.py                   # In-memory ring buffer, file-based logging, error log
+    │   └── resources.py                # Asset path resolution
     └── widgets/
         ├── __init__.py
         ├── config_panel.py             # Binary path selection (dff2dsf + sacd_extract) with validation
-        ├── dialogs.py                  # Reusable dialogs (path warnings, collisions, confirmation)
-        ├── file_panel.py               # File tree view with toolbar and status bar
+        ├── dialogs.py                  # Reusable dialogs (path warnings, collisions, confirmation, Help, About)
+        ├── file_panel.py               # File tree view with dropdown toolbar and status bar
+        ├── folder_dialog.py            # Add Multiple folders dialog with checkable directory tree
         ├── output_panel.py             # Output mode selection (single root / per folder)
         ├── progress_panel.py           # Progress bars + cancellable log view
         ├── sacd_panel.py               # SACD extraction options (channels, CUE, output format)
         └── tag_editor_dialog.py        # Modal dialog for reviewing and editing inferred tags
+
 ```
 ---
 
